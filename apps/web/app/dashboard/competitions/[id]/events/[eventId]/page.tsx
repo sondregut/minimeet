@@ -2,16 +2,17 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getEvent } from '@/lib/actions/events';
 import { getCompetition } from '@/lib/actions/competitions';
+import { getEntriesByEvent } from '@/lib/actions/entries';
 import {
   ArrowLeft,
   Clock,
   Users,
   Play,
-  Pause,
   CheckCircle,
   Settings,
   Plus,
   Trophy,
+  User,
 } from 'lucide-react';
 
 // Helper to get status badge styles
@@ -23,6 +24,18 @@ function getStatusBadge(status: string) {
     completed: { bg: 'bg-green-100', text: 'text-green-700', label: 'Completed' },
   };
   return styles[status] || styles.scheduled;
+}
+
+// Helper to get entry status badge
+function getEntryStatusBadge(status: string) {
+  const styles: Record<string, { bg: string; text: string }> = {
+    registered: { bg: 'bg-gray-100', text: 'text-gray-700' },
+    confirmed: { bg: 'bg-blue-100', text: 'text-blue-700' },
+    checked_in: { bg: 'bg-green-100', text: 'text-green-700' },
+    DNS: { bg: 'bg-orange-100', text: 'text-orange-700' },
+    scratched: { bg: 'bg-red-100', text: 'text-red-700' },
+  };
+  return styles[status] || styles.registered;
 }
 
 // Helper to format event type
@@ -46,9 +59,10 @@ export default async function EventDetailPage({
 }) {
   const { id: competitionId, eventId } = await params;
 
-  const [competition, event] = await Promise.all([
+  const [competition, event, entries] = await Promise.all([
     getCompetition(competitionId),
     getEvent(eventId),
+    getEntriesByEvent(eventId),
   ]);
 
   if (!competition || !event) {
@@ -56,6 +70,7 @@ export default async function EventDetailPage({
   }
 
   const statusBadge = getStatusBadge(event.status);
+  const checkedInCount = entries.filter(e => e.status === 'checked_in').length;
 
   return (
     <div className="space-y-6">
@@ -130,7 +145,7 @@ export default async function EventDetailPage({
               <Users className="w-5 h-5 text-blue-900" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">0</p>
+              <p className="text-2xl font-bold text-gray-900">{entries.length}</p>
               <p className="text-sm text-gray-500">Entries</p>
             </div>
           </div>
@@ -141,7 +156,7 @@ export default async function EventDetailPage({
               <CheckCircle className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">0</p>
+              <p className="text-2xl font-bold text-gray-900">{checkedInCount}</p>
               <p className="text-sm text-gray-500">Checked In</p>
             </div>
           </div>
@@ -174,29 +189,105 @@ export default async function EventDetailPage({
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Start List</h2>
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-900 text-white font-semibold rounded-md hover:bg-blue-800 transition-colors">
+          <Link
+            href={`/dashboard/competitions/${competitionId}/events/${eventId}/entries/new`}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-900 text-white font-semibold rounded-md hover:bg-blue-800 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             Add Entry
-          </button>
+          </Link>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="py-12">
-            <div className="text-center">
-              <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No entries yet
-              </h3>
-              <p className="text-gray-500 mb-6">
-                Add athletes to this event to create a start list
-              </p>
-              <button className="inline-flex items-center gap-2 px-5 py-3 bg-blue-900 text-white font-semibold rounded-md hover:bg-blue-800 transition-colors">
-                <Plus className="w-4 h-4" />
-                Add Entry
-              </button>
+        {entries.length === 0 ? (
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+            <div className="py-12">
+              <div className="text-center">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  No entries yet
+                </h3>
+                <p className="text-gray-500 mb-6">
+                  Add athletes to this event to create a start list
+                </p>
+                <Link
+                  href={`/dashboard/competitions/${competitionId}/events/${eventId}/entries/new`}
+                  className="inline-flex items-center gap-2 px-5 py-3 bg-blue-900 text-white font-semibold rounded-md hover:bg-blue-800 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Entry
+                </Link>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-16">
+                    {event.event_type === 'track' ? 'Lane' : 'Pos'}
+                  </th>
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-20">
+                    Bib
+                  </th>
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">
+                    Athlete
+                  </th>
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">
+                    Club
+                  </th>
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-24">
+                    Seed
+                  </th>
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-28">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {entries.map((entry) => {
+                  const entryBadge = getEntryStatusBadge(entry.status);
+                  return (
+                    <tr key={entry.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-4 text-gray-600">
+                        {entry.lane_or_position || '-'}
+                      </td>
+                      <td className="px-4 py-4 font-medium text-gray-900">
+                        {entry.bib_number || '-'}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                            <User className="w-4 h-4 text-gray-400" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              {entry.athlete?.first_name} {entry.athlete?.last_name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {entry.athlete?.nationality}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-gray-600">
+                        {entry.athlete?.club_name || '-'}
+                      </td>
+                      <td className="px-4 py-4 text-gray-600">
+                        {entry.seed_mark || '-'}
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${entryBadge.bg} ${entryBadge.text}`}>
+                          {entry.status.replace('_', ' ')}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Results (shown when event has results) */}

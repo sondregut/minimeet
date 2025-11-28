@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getCompetition } from '@/lib/actions/competitions';
 import { getEventsByCompetition } from '@/lib/actions/events';
+import { getEntryCountsByEvent } from '@/lib/actions/entries';
 import {
   ArrowLeft,
   Calendar,
@@ -56,7 +57,13 @@ export default async function CompetitionDetailPage({
     notFound();
   }
 
-  const events = await getEventsByCompetition(id);
+  const [events, entryCounts] = await Promise.all([
+    getEventsByCompetition(id),
+    getEntryCountsByEvent(id),
+  ]);
+
+  // Calculate total entries
+  const totalEntries = Object.values(entryCounts).reduce((sum, count) => sum + count, 0);
 
   // Define event type for grouping
   type Event = (typeof events)[number];
@@ -146,7 +153,7 @@ export default async function CompetitionDetailPage({
               <Users className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">0</p>
+              <p className="text-2xl font-bold text-gray-900">{totalEntries}</p>
               <p className="text-sm text-gray-500">Entries</p>
             </div>
           </div>
@@ -262,7 +269,7 @@ export default async function CompetitionDetailPage({
                             </span>
                           </td>
                           <td className="px-4 py-4 text-gray-600">
-                            0
+                            {entryCounts[event.id] || 0}
                           </td>
                           <td className="px-4 py-4">
                             <button className="p-1 hover:bg-gray-100 rounded">

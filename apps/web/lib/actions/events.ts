@@ -52,6 +52,13 @@ export async function createEvent(input: CreateEventInput): Promise<EventResult>
     return { error: 'You must be logged in to create an event' };
   }
 
+  // Get the competition to get its date for the scheduled_time
+  const { data: competition } = await supabase
+    .from('competitions')
+    .select('date')
+    .eq('id', input.competition_id)
+    .single();
+
   // Get max sort_order for this competition
   const { data: existingEvents } = await supabase
     .from('events')
@@ -64,6 +71,13 @@ export async function createEvent(input: CreateEventInput): Promise<EventResult>
     ? (existingEvents[0].sort_order || 0) + 1
     : 0;
 
+  // Convert time-only value (e.g., "22:10") to full timestamp using competition date
+  let scheduledTime: string | null = null;
+  if (input.scheduled_time && competition?.date) {
+    // Combine competition date with the time
+    scheduledTime = `${competition.date}T${input.scheduled_time}:00`;
+  }
+
   const { data, error } = await supabase
     .from('events')
     .insert({
@@ -74,7 +88,7 @@ export async function createEvent(input: CreateEventInput): Promise<EventResult>
       gender: input.gender,
       age_group: input.age_group || 'Senior',
       round: input.round || 'final',
-      scheduled_time: input.scheduled_time || null,
+      scheduled_time: scheduledTime,
       status: 'scheduled',
       sort_order: nextSortOrder,
       settings: {},
