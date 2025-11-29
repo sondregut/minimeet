@@ -41,10 +41,80 @@ export interface BulkImportResult {
   errors: Array<{ row: number; message: string }>;
 }
 
+export interface DuplicateCheckResult {
+  isDuplicate: boolean;
+  existingAthlete?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    date_of_birth: string | null;
+  };
+}
+
 /**
- * Create a single athlete
+ * Check for duplicate athlete in organization
  */
-export async function createAthlete(data: CreateAthleteInput): Promise<AthleteResult> {
+export async function checkDuplicateAthlete(
+  organizationId: string,
+  firstName: string,
+  lastName: string,
+  dateOfBirth?: string | null
+): Promise<DuplicateCheckResult> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .from('athletes')
+    .select('id, first_name, last_name, date_of_birth')
+    .eq('organization_id', organizationId)
+    .ilike('first_name', firstName)
+    .ilike('last_name', lastName);
+
+  if (dateOfBirth) {
+    query = query.eq('date_of_birth', dateOfBirth);
+  }
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) {
+    console.error('Error checking for duplicate:', error);
+    return { isDuplicate: false };
+  }
+
+  if (data) {
+    return {
+      isDuplicate: true,
+      existingAthlete: data,
+    };
+  }
+
+  return { isDuplicate: false };
+}
+
+/**
+ * Get user's default organization
+ */
+export async function getUserDefaultOrganization(): Promise<string | null> {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', user.id)
+    .limit(1)
+    .single();
+
+  return data?.organization_id || null;
+}
+
+/**
+ * Create a single athlete (organization-scoped)
+ */
+export async function createAthlete(
+  data: CreateAthleteInput & { organization_id?: string }
+): Promise<AthleteResult> {
   if (!data.first_name || !data.last_name || !data.gender) {
     return { error: 'First name, last name, and gender are required' };
   }
@@ -58,6 +128,28 @@ export async function createAthlete(data: CreateAthleteInput): Promise<AthleteRe
     return { error: 'You must be logged in to create an athlete' };
   }
 
+  // Get organization_id - either from input or user's default
+  let organizationId = data.organization_id;
+  if (!organizationId) {
+    organizationId = await getUserDefaultOrganization() || undefined;
+  }
+
+  // Check for duplicates if organization is set
+  if (organizationId) {
+    const duplicateCheck = await checkDuplicateAthlete(
+      organizationId,
+      data.first_name,
+      data.last_name,
+      data.date_of_birth
+    );
+
+    if (duplicateCheck.isDuplicate) {
+      return {
+        error: `Athlete "${data.first_name} ${data.last_name}" already exists in this organization`,
+      };
+    }
+  }
+
   const { data: athlete, error } = await supabase
     .from('athletes')
     .insert({
@@ -69,6 +161,7 @@ export async function createAthlete(data: CreateAthleteInput): Promise<AthleteRe
       club_id: data.club_id || null,
       club_name: data.club_name || null,
       license_number: data.license_number || null,
+      organization_id: organizationId || null,
       social_links: {},
       personal_bests: {},
     })
@@ -77,6 +170,10 @@ export async function createAthlete(data: CreateAthleteInput): Promise<AthleteRe
 
   if (error) {
     console.error('Error creating athlete:', error);
+    // Handle unique constraint violation
+    if (error.code === '23505') {
+      return { error: 'An athlete with this name already exists in your organization' };
+    }
     return { error: error.message };
   }
 
@@ -86,10 +183,11 @@ export async function createAthlete(data: CreateAthleteInput): Promise<AthleteRe
 }
 
 /**
- * Bulk import multiple athletes
+ * Bulk import multiple athletes (organization-scoped)
  */
 export async function bulkCreateAthletes(
-  athletes: CreateAthleteInput[]
+  athletes: (CreateAthleteInput & { organization_id?: string })[],
+  organizationId?: string
 ): Promise<BulkImportResult> {
   if (!athletes || athletes.length === 0) {
     return {
@@ -116,6 +214,9 @@ export async function bulkCreateAthletes(
     };
   }
 
+  // Get organization_id if not provided
+  const orgId = organizationId || await getUserDefaultOrganization();
+
   const errors: Array<{ row: number; message: string }> = [];
   let successCount = 0;
 
@@ -139,6 +240,7 @@ export async function bulkCreateAthletes(
       club_id: athlete.club_id || null,
       club_name: athlete.club_name || null,
       license_number: athlete.license_number || null,
+      organization_id: athlete.organization_id || orgId || null,
       social_links: {},
       personal_bests: {},
     };
@@ -162,6 +264,16 @@ export async function bulkCreateAthletes(
 
   if (error) {
     console.error('Error bulk importing athletes:', error);
+    // Handle unique constraint violation
+    if (error.code === '23505') {
+      return {
+        success: false,
+        totalCount: athletes.length,
+        successCount: 0,
+        errorCount: athletes.length,
+        errors: [{ row: 0, message: 'Duplicate athletes detected. Some athletes already exist in your organization.' }],
+      };
+    }
     return {
       success: false,
       totalCount: athletes.length,
@@ -185,9 +297,9 @@ export async function bulkCreateAthletes(
 }
 
 /**
- * Get all athletes
+ * Get all athletes (optionally filtered by organization)
  */
-export async function getAthletes(): Promise<Athlete[]> {
+export async function getAthletes(organizationId?: string): Promise<Athlete[]> {
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -196,9 +308,67 @@ export async function getAthletes(): Promise<Athlete[]> {
     return [];
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('athletes')
     .select('*')
+    .order('last_name', { ascending: true })
+    .order('first_name', { ascending: true });
+
+  // Filter by organization if provided
+  if (organizationId) {
+    query = query.eq('organization_id', organizationId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching athletes:', error);
+    return [];
+  }
+
+  return (data as Athlete[]) || [];
+}
+
+/**
+ * Get athletes by organization
+ */
+export async function getAthletesByOrganization(organizationId: string): Promise<Athlete[]> {
+  return getAthletes(organizationId);
+}
+
+/**
+ * Get athletes for the user's organizations
+ */
+export async function getMyOrganizationAthletes(): Promise<Athlete[]> {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return [];
+  }
+
+  // Get user's organizations
+  const { data: memberships } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', user.id);
+
+  if (!memberships || memberships.length === 0) {
+    return [];
+  }
+
+  const orgIds = memberships.map(m => m.organization_id);
+
+  // Get athletes from those organizations (including unassigned/null org_id)
+  // Join with organizations to get org name
+  const { data, error } = await supabase
+    .from('athletes')
+    .select(`
+      *,
+      organization:organizations(id, name)
+    `)
+    .or(`organization_id.in.(${orgIds.join(',')}),organization_id.is.null`)
     .order('last_name', { ascending: true })
     .order('first_name', { ascending: true });
 

@@ -14,6 +14,10 @@ import {
   Play,
   Settings,
   MoreVertical,
+  Hash,
+  LayoutDashboard,
+  Zap,
+  FileText,
 } from 'lucide-react';
 
 // Helper to format event type display
@@ -120,6 +124,41 @@ export default async function CompetitionDetailPage({
           </div>
 
           <div className="flex items-center gap-3">
+            <Link
+              href={`/dashboard/competitions/${id}/control`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 transition-colors"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Control
+            </Link>
+            <Link
+              href={`/dashboard/competitions/${id}/entries`}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-md hover:bg-gray-50 transition-colors"
+            >
+              <Users className="w-4 h-4" />
+              All Entries
+            </Link>
+            <Link
+              href={`/dashboard/competitions/${id}/bibs`}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-md hover:bg-gray-50 transition-colors"
+            >
+              <Hash className="w-4 h-4" />
+              Assign Bibs
+            </Link>
+            <Link
+              href={`/dashboard/competitions/${id}/reports`}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-md hover:bg-gray-50 transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              Reports
+            </Link>
+            <Link
+              href={`/dashboard/competitions/${id}/events/quick-add`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white font-semibold rounded-md hover:bg-amber-600 transition-colors"
+            >
+              <Zap className="w-4 h-4" />
+              Quick Add
+            </Link>
             <Link
               href={`/dashboard/competitions/${id}/events/new`}
               className="inline-flex items-center gap-2 px-4 py-2 bg-blue-900 text-white font-semibold rounded-md hover:bg-blue-800 transition-colors"

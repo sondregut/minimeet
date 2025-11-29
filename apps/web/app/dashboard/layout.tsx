@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { signOut } from '@/lib/auth-actions';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import {
   Home,
   Trophy,
@@ -10,6 +12,28 @@ import {
   Menu,
 } from 'lucide-react';
 
+async function createClient() {
+  const cookieStore = await cookies();
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          cookieStore.set({ name, value, ...options });
+        },
+        remove(name: string, options: CookieOptions) {
+          cookieStore.set({ name, value: '', ...options });
+        },
+      },
+    }
+  );
+}
+
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Competitions', href: '/dashboard/competitions', icon: Trophy },
@@ -17,11 +41,18 @@ const navigation = [
   { name: 'Organizations', href: '/dashboard/organizations', icon: Building2 },
 ];
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const userEmail = user?.email || 'Unknown';
+  const userInitial = userEmail.charAt(0).toUpperCase();
+  const userName = user?.user_metadata?.full_name || 'User';
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
@@ -55,11 +86,11 @@ export default function DashboardLayout({
           <div className="border-t border-gray-200 p-4">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                <span className="text-blue-900 font-semibold">U</span>
+                <span className="text-blue-900 font-semibold">{userInitial}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">User</p>
-                <p className="text-xs text-gray-500 truncate">user@example.com</p>
+                <p className="text-sm font-medium text-gray-900 truncate">{userName}</p>
+                <p className="text-xs text-gray-500 truncate">{userEmail}</p>
               </div>
             </div>
             <div className="flex gap-2">

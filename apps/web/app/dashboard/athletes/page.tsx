@@ -1,9 +1,9 @@
 import Link from 'next/link';
-import { Plus, Users, Search, Upload } from 'lucide-react';
-import { getAthletes } from '@/lib/actions/athletes';
+import { Plus, Users, Search, Upload, Building2 } from 'lucide-react';
+import { getMyOrganizationAthletes } from '@/lib/actions/athletes';
 
 export default async function AthletesPage() {
-  const athletes = await getAthletes();
+  const athletes = await getMyOrganizationAthletes();
 
   return (
     <div className="space-y-6">
@@ -12,7 +12,7 @@ export default async function AthletesPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Athletes</h1>
           <p className="text-gray-600">
-            Manage your athlete database
+            Manage athletes in your organizations
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -90,6 +90,7 @@ export default async function AthletesPage() {
                   <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">DOB</th>
                   <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">Nationality</th>
                   <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">License</th>
+                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">Org</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -107,6 +108,16 @@ export default async function AthletesPage() {
                     </td>
                     <td className="px-4 py-4 text-gray-600">{athlete.nationality}</td>
                     <td className="px-4 py-4 text-gray-600">{athlete.license_number || '-'}</td>
+                    <td className="px-4 py-4 text-gray-600">
+                      {athlete.organization ? (
+                        <span className="inline-flex items-center gap-1 text-sm">
+                          <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                          {athlete.organization.name}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-sm">Unassigned</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

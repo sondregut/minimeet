@@ -187,10 +187,13 @@ export interface Athlete {
   profile_image_url: string | null;
   social_links: SocialLinks;
   personal_bests: PersonalBestCache;
+  organization_id: string | null;
   created_at: string;
   updated_at: string;
   // Computed
   full_name?: string;
+  // Joined data
+  organization?: Organization;
 }
 
 // ----------------------------------------------------------------------------

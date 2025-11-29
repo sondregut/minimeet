@@ -160,3 +160,16 @@
            bg-[length:200%_100%];
   }
 }
+
+/* Print styles for start lists and results */
+@media print {
+  @page {
+    size: A4;
+    margin: 1.5cm;
+  }
+
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
