@@ -959,19 +959,28 @@ export async function checkAndUpdateRecords(
 
 /**
  * Detect and update PB/SB for all results in an event
+ * Also checks for MR/CR/NR if record settings are configured
  */
 export async function detectRecordsForEvent(
   eventId: string,
   competitionId: string,
   eventType: string,
-  eventCode: string
+  eventCode: string,
+  gender?: string,
+  ageGroup?: string | null
 ): Promise<ResultResponse> {
   const supabase = await createClient();
 
-  if (eventType === 'track' || eventType === 'relay' || eventType === 'road') {
+  // Import checkForRecordBreaks dynamically to avoid circular dependencies
+  const { checkForRecordBreaks } = await import('./records');
+
+  const isTrackEvent = eventType === 'track' || eventType === 'relay' || eventType === 'road';
+
+  if (isTrackEvent) {
     const results = await getTrackResultsByEvent(eventId);
     for (const result of results) {
       if (result.status === 'finished' && result.time_ms && result.entry?.athlete?.id) {
+        // Check PB/SB using existing function
         await checkAndUpdateRecords(
           result.entry.athlete.id,
           eventCode,
@@ -980,6 +989,27 @@ export async function detectRecordsForEvent(
           result.id,
           'track_results'
         );
+
+        // Check for MR/CR/NR using new records system
+        if (gender) {
+          const athleteName = `${result.entry.athlete.first_name} ${result.entry.athlete.last_name}`;
+          const timeDisplay = result.time_display || formatTime(result.time_ms);
+
+          await checkForRecordBreaks({
+            competitionId,
+            eventId,
+            entryId: result.entry.id,
+            athleteId: result.entry.athlete.id,
+            athleteName,
+            eventCode,
+            gender,
+            ageGroup: ageGroup || null,
+            markValue: result.time_ms / 1000, // Convert ms to seconds for storage
+            markDisplay: timeDisplay,
+            wind: result.wind,
+            isTrackEvent: true,
+          });
+        }
       }
     }
   } else if (eventType === 'field_vertical') {
@@ -994,6 +1024,26 @@ export async function detectRecordsForEvent(
           result.id,
           'vertical_results'
         );
+
+        // Check for MR/CR/NR
+        if (gender) {
+          const athleteName = `${result.entry.athlete.first_name} ${result.entry.athlete.last_name}`;
+
+          await checkForRecordBreaks({
+            competitionId,
+            eventId,
+            entryId: result.entry.id,
+            athleteId: result.entry.athlete.id,
+            athleteName,
+            eventCode,
+            gender,
+            ageGroup: ageGroup || null,
+            markValue: result.best_height,
+            markDisplay: `${result.best_height.toFixed(2)}m`,
+            wind: null,
+            isTrackEvent: false,
+          });
+        }
       }
     }
   } else if (eventType === 'field_horizontal' || eventType === 'throw') {
@@ -1008,6 +1058,26 @@ export async function detectRecordsForEvent(
           result.id,
           'field_results'
         );
+
+        // Check for MR/CR/NR
+        if (gender) {
+          const athleteName = `${result.entry.athlete.first_name} ${result.entry.athlete.last_name}`;
+
+          await checkForRecordBreaks({
+            competitionId,
+            eventId,
+            entryId: result.entry.id,
+            athleteId: result.entry.athlete.id,
+            athleteName,
+            eventCode,
+            gender,
+            ageGroup: ageGroup || null,
+            markValue: result.best_mark,
+            markDisplay: `${result.best_mark.toFixed(2)}m`,
+            wind: result.best_mark_wind,
+            isTrackEvent: false,
+          });
+        }
       }
     }
   }
@@ -1018,6 +1088,17 @@ export async function detectRecordsForEvent(
   return { success: true };
 }
 
+// Helper function to format time in ms to display string
+function formatTime(ms: number): string {
+  const totalSeconds = ms / 1000;
+  if (totalSeconds >= 60) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = (totalSeconds % 60).toFixed(2);
+    return `${minutes}:${seconds.padStart(5, '0')}`;
+  }
+  return totalSeconds.toFixed(2);
+}
+
 /**
  * Recalculate all places AND detect records for an event
  */
@@ -1025,7 +1106,9 @@ export async function recalculateAll(
   eventId: string,
   competitionId: string,
   eventType: string,
-  eventCode: string
+  eventCode: string,
+  gender?: string,
+  ageGroup?: string | null
 ): Promise<ResultResponse> {
   // First recalculate places
   const placesResult = await recalculateEventPlaces(eventId, competitionId, eventType);
@@ -1033,8 +1116,15 @@ export async function recalculateAll(
     return placesResult;
   }
 
-  // Then detect records
-  const recordsResult = await detectRecordsForEvent(eventId, competitionId, eventType, eventCode);
+  // Then detect records (PB/SB and MR/CR/NR)
+  const recordsResult = await detectRecordsForEvent(
+    eventId,
+    competitionId,
+    eventType,
+    eventCode,
+    gender,
+    ageGroup
+  );
   if (recordsResult.error) {
     return recordsResult;
   }

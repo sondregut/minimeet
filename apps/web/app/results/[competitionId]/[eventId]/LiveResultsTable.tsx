@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Trophy, RefreshCw } from 'lucide-react';
+import { RecordBadges } from '@/components/records/RecordBadges';
 
 interface Athlete {
   first_name: string;
@@ -10,13 +11,23 @@ interface Athlete {
   club_name: string | null;
 }
 
-interface TrackResult {
+// Common record flags for all result types
+interface RecordFlags {
+  is_pb?: boolean;
+  is_sb?: boolean;
+  is_mr?: boolean;
+  is_cr?: boolean;
+  is_clr?: boolean;
+  is_nr?: boolean;
+}
+
+interface TrackResult extends RecordFlags {
   place: number | null;
   status: string;
   time_display: string | null;
 }
 
-interface VerticalResult {
+interface VerticalResult extends RecordFlags {
   id: string;
   place: number | null;
   best_height: number | null;
@@ -31,7 +42,7 @@ interface VerticalAttempt {
   outcome: 'o' | 'x' | '-' | 'r';
 }
 
-interface FieldResult {
+interface FieldResult extends RecordFlags {
   id: string;
   place: number | null;
   best_mark: number | null;
@@ -236,9 +247,20 @@ function TrackResultsTable({ entries }: { entries: Entry[] }) {
                 </td>
                 <td className="px-4 py-3 text-right">
                   {result?.status === 'finished' && result?.time_display ? (
-                    <span className={`font-mono font-bold text-lg ${isWinner ? 'text-yellow-700' : 'text-gray-900'}`}>
-                      {result.time_display}
-                    </span>
+                    <div className="flex items-center justify-end gap-2">
+                      <span className={`font-mono font-bold text-lg ${isWinner ? 'text-yellow-700' : 'text-gray-900'}`}>
+                        {result.time_display}
+                      </span>
+                      <RecordBadges
+                        isPB={result.is_pb}
+                        isSB={result.is_sb}
+                        isMR={result.is_mr}
+                        isCR={result.is_cr}
+                        isCLR={result.is_clr}
+                        isNR={result.is_nr}
+                        showAll
+                      />
+                    </div>
                   ) : result?.status === 'DNS' ? (
                     <span className="text-gray-400 font-semibold">DNS</span>
                   ) : result?.status === 'DNF' ? (
@@ -316,9 +338,20 @@ function VerticalResultsTable({ entries, heights }: { entries: Entry[]; heights:
                 </td>
                 <td className="px-3 py-3 text-center">
                   {result?.best_height ? (
-                    <span className={`font-mono font-bold text-lg ${isWinner ? 'text-yellow-700' : 'text-gray-900'}`}>
-                      {result.best_height.toFixed(2)}
-                    </span>
+                    <div className="flex flex-col items-center">
+                      <span className={`font-mono font-bold text-lg ${isWinner ? 'text-yellow-700' : 'text-gray-900'}`}>
+                        {result.best_height.toFixed(2)}
+                      </span>
+                      <RecordBadges
+                        isPB={result.is_pb}
+                        isSB={result.is_sb}
+                        isMR={result.is_mr}
+                        isCR={result.is_cr}
+                        isCLR={result.is_clr}
+                        isNR={result.is_nr}
+                        showAll
+                      />
+                    </div>
                   ) : (
                     <span className="text-gray-400">NH</span>
                   )}
@@ -422,15 +455,24 @@ function FieldResultsTable({ entries, eventType }: { entries: Entry[]; eventType
                 </td>
                 <td className="px-3 py-3 text-center">
                   {result?.best_mark ? (
-                    <div>
+                    <div className="flex flex-col items-center">
                       <span className={`font-mono font-bold text-lg ${isWinner ? 'text-yellow-700' : 'text-gray-900'}`}>
                         {formatMark(result.best_mark, eventType)}
                       </span>
                       {showWind && result.best_mark_wind !== null && (
-                        <span className="text-gray-400 text-xs block">
+                        <span className="text-gray-400 text-xs">
                           ({result.best_mark_wind > 0 ? '+' : ''}{result.best_mark_wind})
                         </span>
                       )}
+                      <RecordBadges
+                        isPB={result.is_pb}
+                        isSB={result.is_sb}
+                        isMR={result.is_mr}
+                        isCR={result.is_cr}
+                        isCLR={result.is_clr}
+                        isNR={result.is_nr}
+                        showAll
+                      />
                     </div>
                   ) : (
                     <span className="text-gray-400">NM</span>

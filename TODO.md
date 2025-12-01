@@ -78,31 +78,31 @@
 - [x] Pre-fill existing results
 - [x] Status-aware dropdown styling
 
-### 4.2: Automatic Calculations - PARTIAL
+### 4.2: Automatic Calculations - COMPLETE
 - [x] Auto-calculate places from times/distances
 - [x] Auto-detect records (PB, SB)
-- [ ] Auto-detect meeting records (MR, CR, NR)
+- [x] Auto-detect meeting records (MR, CR, NR)
 - [x] Auto-calculate advancement to next round (Q/q)
 - [x] One-click "Recalculate All" button
 - [ ] Points calculation for combined events
 
-### 4.3: Status Codes - PARTIAL
+### 4.3: Status Codes - COMPLETE
 - [x] Full status support: OK, DNS, DNF, DQ, DSQ, OOC (implemented in Phase 4.1 - track: finished/DNS/DNF/DQ/FS)
 - [x] Notes field per athlete per event
 - [x] Reaction times for track events (schema exists, UI in place)
 - [x] Wind readings per attempt for field events (schema exists)
 
-### 4.4: Records System
-- [ ] Configure enabled record types per competition
-  - [ ] Meeting Record (MR)
-  - [ ] Championship Record (CR)
-  - [ ] Club Record (CLR)
-  - [ ] National Record (NR)
-  - [ ] Personal Best (PB)
-  - [ ] Season Best (SB)
-- [ ] Initial records setup (existing records to beat)
-- [ ] Auto-highlight new records in results display
-- [ ] Record history tracking and verification
+### 4.4: Records System - COMPLETE
+- [x] Configure enabled record types per competition
+  - [x] Meeting Record (MR)
+  - [x] Championship Record (CR)
+  - [x] Club Record (CLR)
+  - [x] National Record (NR)
+  - [x] Personal Best (PB)
+  - [x] Season Best (SB)
+- [x] Initial records setup (existing records to beat)
+- [x] Auto-highlight new records in results display
+- [x] Record history tracking and verification
 
 ---
 
@@ -141,31 +141,39 @@
 
 ---
 
-## Phase 6: Registration System
+## Phase 6: Registration System - COMPLETE
 *Support both self-service AND organizer-only entry*
 
-### 6.1: Registration Configuration (per competition)
-- [ ] Registration mode: Disabled / Organizer-only / Self-service / Hybrid
-- [ ] Registration deadline (global and per-event)
-- [ ] Required fields: PB, SB, License number
-- [ ] Qualification standards (optional min/max marks)
-- [ ] Max participants per event
-- [ ] Age group restrictions
+### 6.1: Registration Configuration (per competition) - COMPLETE
+- [x] Registration mode: Disabled / Organizer-only / Self-service / Hybrid
+- [x] Registration deadline (global and per-event)
+- [x] Required fields: PB, SB, License number, DOB, Club
+- [x] Qualification standards (optional min/max marks) - schema ready
+- [x] Max participants per event - schema ready
+- [x] Age group restrictions - schema ready
+- [x] Welcome message, terms & conditions, contact email
+- [x] Auto-approve toggle
 
-### 6.2: Athlete Self-Registration
-- [ ] Public registration page per competition
-- [ ] Athlete account creation (or login existing)
-- [ ] Event selection with availability status
-- [ ] Entry form with PB/SB input
-- [ ] Message to organizer field
-- [ ] Registration confirmation email
+### 6.2: Athlete Self-Registration - COMPLETE
+- [x] Public registration page per competition (`/register/[id]`)
+- [x] Registration period validation (opens/closes)
+- [x] Event selection with availability status
+- [x] Entry form with PB/SB input (when required)
+- [x] Message to organizer field
+- [x] Terms acceptance checkbox
+- [x] Success confirmation with summary
+- [ ] Registration confirmation email (pending)
 
-### 6.3: Registration Management (Organizer)
-- [ ] Registration inbox with approve/reject actions
-- [ ] Waitlist management
-- [ ] Bulk approve/reject
-- [ ] Email notifications to athletes
-- [ ] Export registrations to CSV
+### 6.3: Registration Management (Organizer) - COMPLETE
+- [x] Registration inbox with approve/reject actions
+- [x] Expand/collapse registration details
+- [x] Status filter (all, pending, approved, rejected, waitlist)
+- [x] Bulk approve/reject with select all pending
+- [x] Rejection reason input
+- [x] Auto-create athlete & entries on approval
+- [x] Export registrations to CSV
+- [ ] Email notifications to athletes (pending)
+- [x] Waitlist status support (schema ready)
 
 ### 6.4: Payment Integration (Future)
 - [ ] Stripe integration
@@ -401,4 +409,4 @@ Fields (15): Place, ID, Lane, LastName, FirstName, Affiliation, Time, License, D
 
 ---
 
-*Last updated: November 2024*
+*Last updated: November 30, 2025*

@@ -4,6 +4,107 @@ This log tracks all significant changes and updates to the MiniMeet application.
 
 ---
 
+## 2025-11-30
+
+### Records System (Phase 4.4) - COMPLETE
+Implemented comprehensive records tracking and detection for athletics competitions:
+
+**Database Migration**: `20241130000001_records_system.sql`
+- Created `record_type` enum: PB, SB, MR, CR, CLR, NR, AR, WR
+- **Tables**:
+  - `competition_record_settings` - Configure which record types to track per competition
+  - `record_definitions` - Existing records to beat (MR, CR, NR, etc.)
+  - `record_breaks` - Log of all records broken during competitions
+- Added `is_mr`, `is_cr`, `is_clr`, `is_nr` columns to track_results, field_results, vertical_results
+- Full RLS policies for organizer management
+
+**Server Actions** (`/lib/actions/records.ts`):
+- `getRecordSettings()` / `upsertRecordSettings()` - Manage record tracking configuration
+- `getRecordDefinitions()` / `createRecordDefinition()` / `deleteRecordDefinition()` - Manage existing records
+- `getRecordBreaks()` / `createRecordBreak()` - Track broken records
+- `markRecordBreakOfficial()` / `markRecordBreakAnnounced()` - Record verification workflow
+- `checkForRecordBreaks()` - Auto-detect if result breaks any records
+- `getCompetitionRecordsSummary()` - Summary stats for competition
+
+**Records Settings UI** (`/dashboard/competitions/[id]/records`):
+- **Settings Tab**: Configure which record types to track (PB, SB, MR, CR, CLR, NR)
+- **Records to Beat Tab**: Add/manage existing records with form for event, mark, holder, date
+- **Records Broken Tab**: View records broken during competition with official/announced status
+- Stats cards showing total records, meeting records, championship records, PB/SB counts
+- "Records" button added to competition detail page
+
+**Record Badges Component** (`/components/records/RecordBadges.tsx`):
+- Reusable component for displaying record badges (PB, SB, MR, CR, CLR, NR)
+- Priority-based display (NR > CR > MR > CLR > PB > SB)
+- Color-coded badges with tooltips
+- Integrated into LiveResultsTable for track, field, and vertical results
+
+**Auto-Detection Integration**:
+- Updated `detectRecordsForEvent()` to check for MR/CR/NR in addition to PB/SB
+- Updated `recalculateAll()` to pass gender and age group for proper record matching
+- Records automatically updated in athlete profile when new PB/SB achieved
+
+---
+
+### Registration System (Phase 6) - COMPLETE
+Implemented comprehensive self-service athlete registration with approval workflow:
+
+**Database Migration**: `20241129000006_registration_system.sql`
+- Created `registration_mode` enum: disabled, organizer_only, self_service, hybrid
+- Created `registration_status` enum: pending, approved, rejected, waitlist, withdrawn
+- **Tables**:
+  - `registration_settings` - Per-competition registration configuration
+  - `event_registration_settings` - Per-event overrides (limits, standards, age restrictions)
+  - `registrations` - Athlete registration requests with personal info
+  - `registration_events` - Event selections per registration with PB/SB marks
+- Full RLS policies for public/organizer access
+- Realtime enabled for registrations
+
+**Server Actions** (`/lib/actions/registrations.ts`):
+- `getRegistrationSettings()` - Get competition registration config
+- `upsertRegistrationSettings()` - Create/update registration settings
+- `getEventsForRegistration()` - Get events available for registration
+- `submitRegistration()` - Public registration submission
+- `getRegistrations()` - Get all registrations for a competition
+- `approveRegistration()` - Approve registration, create athlete & entries
+- `rejectRegistration()` - Reject with optional reason
+- `bulkApproveRegistrations()` / `bulkRejectRegistrations()` - Bulk actions
+- `addToWaitlist()` - Add registration to waitlist
+- `exportRegistrationsCSV()` - Export registrations to CSV
+
+**Registration Settings UI** (`/dashboard/competitions/[id]/registration`):
+- **Settings Tab**:
+  - Registration mode selection (disabled, organizer only, self-service, hybrid)
+  - Registration period (opens/closes dates)
+  - Required fields toggles (DOB, club, license, PB, SB)
+  - Max events per athlete limit
+  - Auto-approve toggle
+  - Welcome message, terms & conditions, contact email
+- **Inbox Tab**:
+  - Registration list with expand/collapse details
+  - Status filter (all, pending, approved, rejected, waitlist)
+  - Bulk selection with select all pending
+  - Approve/Reject buttons with optional rejection reason
+  - Athlete details view: personal info, events, messages
+- Stats cards showing total, pending, approved, rejected, waitlist counts
+- Public registration URL display with external link
+
+**Public Registration Page** (`/register/[id]`):
+- Competition header with date, location, welcome message
+- Registration period checks (not yet open, closed)
+- Personal information form with conditional required fields
+- Event selection grid grouped by event type
+- PB/SB inputs per event when required
+- Additional notes textarea for athlete messages
+- Terms acceptance checkbox
+- Validation against registration settings
+- Success confirmation with summary
+
+**Competition Page Updates**:
+- Added "Registration" button with ClipboardList icon to competition detail header
+
+---
+
 ## 2025-11-29
 
 ### Reports & Exports (9.1) - COMPLETE

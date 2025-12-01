@@ -18,6 +18,8 @@ import {
   LayoutDashboard,
   Zap,
   FileText,
+  ClipboardList,
+  Medal,
 } from 'lucide-react';
 
 // Helper to format event type display
@@ -151,6 +153,20 @@ export default async function CompetitionDetailPage({
             >
               <FileText className="w-4 h-4" />
               Reports
+            </Link>
+            <Link
+              href={`/dashboard/competitions/${id}/registration`}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-md hover:bg-gray-50 transition-colors"
+            >
+              <ClipboardList className="w-4 h-4" />
+              Registration
+            </Link>
+            <Link
+              href={`/dashboard/competitions/${id}/records`}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 font-semibold rounded-md hover:bg-gray-50 transition-colors"
+            >
+              <Medal className="w-4 h-4" />
+              Records
             </Link>
             <Link
               href={`/dashboard/competitions/${id}/events/quick-add`}
