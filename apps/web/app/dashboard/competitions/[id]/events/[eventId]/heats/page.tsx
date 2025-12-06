@@ -14,19 +14,21 @@ import {
   ChevronUp,
   Settings,
   RefreshCw,
-  Wind
+  Wind,
+  Info
 } from 'lucide-react';
 import {
   getHeatsForEvent,
   getHeatEntries,
   getEventEntriesForHeats,
-  generateHeats,
   deleteEventHeats,
   updateHeatStatus,
   type Heat,
   type HeatEntry
 } from '@/lib/actions/heats';
 import { getEvent } from '@/lib/actions/events';
+import { generateSeeding, clearSeeding } from '@/lib/actions/seeding';
+import { getAllPresets, type SeedingPresetId, type LaneCount } from '@/lib/seeding';
 import AdvancementCalculator from '@/components/AdvancementCalculator';
 
 interface HeatWithEntries extends Heat {
@@ -47,8 +49,9 @@ export default function HeatsPage() {
   const [expandedHeats, setExpandedHeats] = useState<Set<string>>(new Set());
 
   // Generate heats form state
-  const [numLanes, setNumLanes] = useState(8);
-  const [seedingMethod, setSeedingMethod] = useState<'serpentine' | 'random' | 'fastest_last'>('serpentine');
+  const [numLanes, setNumLanes] = useState<LaneCount>(8);
+  const [presetId, setPresetId] = useState<SeedingPresetId>('club_simplified');
+  const presets = getAllPresets();
 
   const loadData = async () => {
     setLoading(true);
@@ -57,7 +60,13 @@ export default function HeatsPage() {
       const eventData = await getEvent(eventId);
       if (eventData) {
         setEvent(eventData);
-        setNumLanes(eventData.num_lanes || 8);
+        // Set lane count - default to 8, but ensure it's a valid LaneCount
+        const lanes = eventData.num_lanes || 8;
+        if (lanes === 6 || lanes === 8 || lanes === 9) {
+          setNumLanes(lanes as LaneCount);
+        } else {
+          setNumLanes(8);
+        }
       }
 
       // Load heats
@@ -93,11 +102,11 @@ export default function HeatsPage() {
   const handleGenerateHeats = async () => {
     setGenerating(true);
     try {
-      const result = await generateHeats({
+      const result = await generateSeeding({
         eventId,
         competitionId,
-        numLanes,
-        seedingMethod,
+        presetId,
+        laneCount: numLanes,
       });
 
       if (result.error) {
@@ -108,19 +117,19 @@ export default function HeatsPage() {
       }
     } catch (error) {
       console.error('Error generating heats:', error);
-      alert('Failed to generate heats');
+      alert('Kunne ikke generere heat');
     } finally {
       setGenerating(false);
     }
   };
 
   const handleDeleteHeats = async () => {
-    if (!confirm('Are you sure you want to delete all heats? This cannot be undone.')) {
+    if (!confirm('Er du sikker på at du vil slette alle heat? Dette kan ikke angres.')) {
       return;
     }
 
     try {
-      const result = await deleteEventHeats(eventId, competitionId);
+      const result = await clearSeeding(eventId, competitionId);
       if (result.error) {
         alert(result.error);
       } else {
@@ -128,7 +137,7 @@ export default function HeatsPage() {
       }
     } catch (error) {
       console.error('Error deleting heats:', error);
-      alert('Failed to delete heats');
+      alert('Kunne ikke slette heat');
     }
   };
 
@@ -206,12 +215,12 @@ export default function HeatsPage() {
             className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-2"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
-            Back to Event
+            Tilbake til øvelse
           </Link>
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                Heats Management
+                Heat-administrasjon
               </h1>
               <p className="text-gray-600 mt-1">
                 {event?.name} ({event?.event_code})
@@ -221,7 +230,7 @@ export default function HeatsPage() {
               <button
                 onClick={() => loadData()}
                 className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
-                title="Refresh"
+                title="Oppdater"
               >
                 <RefreshCw className="h-5 w-5" />
               </button>
@@ -231,7 +240,7 @@ export default function HeatsPage() {
                   className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1"
                 >
                   <Trash2 className="h-4 w-4" />
-                  Delete Heats
+                  Slett heat
                 </button>
               )}
               <button
@@ -239,7 +248,7 @@ export default function HeatsPage() {
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
               >
                 <Zap className="h-4 w-4" />
-                {heats.length > 0 ? 'Regenerate Heats' : 'Generate Heats'}
+                {heats.length > 0 ? 'Generer på nytt' : 'Generer heat'}
               </button>
             </div>
           </div>
@@ -252,14 +261,14 @@ export default function HeatsPage() {
           <div className="flex items-center gap-6 text-sm">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-600">{totalEntries} entries</span>
+              <span className="text-gray-600">{totalEntries} påmeldinger</span>
             </div>
             <div className="flex items-center gap-2">
               <Settings className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-600">{heats.length} heats</span>
+              <span className="text-gray-600">{heats.length} heat</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-gray-600">{numLanes} lanes</span>
+              <span className="text-gray-600">{numLanes} baner</span>
             </div>
             {heats.some(h => h.status === 'in_progress') && (
               <div className="flex items-center gap-2">
@@ -279,11 +288,11 @@ export default function HeatsPage() {
         {heats.length === 0 ? (
           <div className="bg-white rounded-lg border p-12 text-center">
             <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Heats Generated</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Ingen heat generert</h3>
             <p className="text-gray-500 mb-6">
               {totalEntries > 0
-                ? `You have ${totalEntries} entries. Generate heats to assign athletes to lanes.`
-                : 'Add entries to this event first, then generate heats.'}
+                ? `Du har ${totalEntries} påmeldinger. Generer heat for å tildele utøvere til baner.`
+                : 'Legg til påmeldinger i øvelsen først, deretter kan du generere heat.'}
             </p>
             {totalEntries > 0 && (
               <button
@@ -291,7 +300,7 @@ export default function HeatsPage() {
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 inline-flex items-center gap-2"
               >
                 <Zap className="h-5 w-5" />
-                Generate Heats
+                Generer heat
               </button>
             )}
           </div>
@@ -433,53 +442,100 @@ export default function HeatsPage() {
       {/* Generate Heats Modal */}
       {showGenerateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
             <div className="px-6 py-4 border-b">
-              <h2 className="text-lg font-semibold">Generate Heats</h2>
+              <h2 className="text-lg font-semibold">Generer heat</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Seeding etter World Athletics-regler
+              </p>
             </div>
             <div className="px-6 py-4 space-y-4">
+              {/* Preset Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Regelsett
+                </label>
+                <div className="space-y-2">
+                  {presets.map((preset) => (
+                    <label
+                      key={preset.id}
+                      className={`flex items-start p-3 border rounded-lg cursor-pointer transition-colors ${
+                        presetId === preset.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="preset"
+                        value={preset.id}
+                        checked={presetId === preset.id}
+                        onChange={() => setPresetId(preset.id)}
+                        className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div className="ml-3">
+                        <div className="text-sm font-medium text-gray-900">
+                          {preset.nameNo}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {preset.descriptionNo}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Lane Count */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Number of Lanes
+                  Antall baner
                 </label>
                 <select
                   value={numLanes}
-                  onChange={(e) => setNumLanes(parseInt(e.target.value))}
+                  onChange={(e) => setNumLanes(parseInt(e.target.value) as LaneCount)}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value={4}>4 lanes</option>
-                  <option value={6}>6 lanes</option>
-                  <option value={8}>8 lanes</option>
-                  <option value={10}>10 lanes</option>
+                  <option value={6}>6 baner</option>
+                  <option value={8}>8 baner (standard)</option>
+                  <option value={9}>9 baner</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Seeding Method
-                </label>
-                <select
-                  value={seedingMethod}
-                  onChange={(e) => setSeedingMethod(e.target.value as typeof seedingMethod)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="serpentine">Serpentine (even distribution)</option>
-                  <option value="fastest_last">Fastest in Final Heat</option>
-                  <option value="random">Random</option>
-                </select>
-                <p className="mt-1 text-xs text-gray-500">
-                  {seedingMethod === 'serpentine' && 'Distributes talent evenly across all heats'}
-                  {seedingMethod === 'fastest_last' && 'Puts fastest athletes in the last heat'}
-                  {seedingMethod === 'random' && 'Random assignment regardless of seed time'}
-                </p>
-              </div>
 
-              {/* Lane Assignment Info */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
-                <strong>Lane Priority:</strong> Center lanes (4, 5, 3, 6...) are assigned first to faster athletes.
-              </div>
+              {/* Selected Preset Info */}
+              {presetId !== 'manual' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                  <div className="flex items-start gap-2">
+                    <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm text-blue-800">
+                      {presetId === 'wa_standard' && (
+                        <>
+                          <strong>WA-regler:</strong> Zigzag-fordeling av utøvere til heat.
+                          Banetrekning etter rankinggrupper. Utøvere fra samme klubb
+                          spres på forskjellige heat.
+                        </>
+                      )}
+                      {presetId === 'club_simplified' && (
+                        <>
+                          <strong>Klubbstevne:</strong> Zigzag-fordeling sikrer jevne heat.
+                          Enkel banetildeling med midtbanene til de raskeste.
+                        </>
+                      )}
+                      {presetId === 'school_basic' && (
+                        <>
+                          <strong>Skolestevne:</strong> Tilfeldig fordeling til heat og baner.
+                          Passer for uformelle stevner.
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
+              {/* Summary */}
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 text-sm text-yellow-800">
-                <strong>Note:</strong> This will{heats.length > 0 ? ' delete existing heats and' : ''} create {Math.ceil(totalEntries / numLanes)} new heat{Math.ceil(totalEntries / numLanes) !== 1 ? 's' : ''} for {totalEntries} entries.
+                {heats.length > 0 && <><strong>OBS:</strong> Eksisterende heat slettes. </>}
+                Det opprettes {Math.ceil(totalEntries / numLanes)} heat for {totalEntries} påmeldinger.
               </div>
             </div>
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-2">
@@ -487,7 +543,7 @@ export default function HeatsPage() {
                 onClick={() => setShowGenerateModal(false)}
                 className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
               >
-                Cancel
+                Avbryt
               </button>
               <button
                 onClick={handleGenerateHeats}
@@ -497,12 +553,12 @@ export default function HeatsPage() {
                 {generating ? (
                   <>
                     <RefreshCw className="h-4 w-4 animate-spin" />
-                    Generating...
+                    Genererer...
                   </>
                 ) : (
                   <>
                     <Zap className="h-4 w-4" />
-                    Generate
+                    Generer
                   </>
                 )}
               </button>

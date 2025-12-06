@@ -844,3 +844,375 @@ export async function exportRegistrationsCSV(competitionId: string): Promise<str
 
   return [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
 }
+
+// ============================================================================
+// Bulk Import Registrations from CSV
+// ============================================================================
+
+export interface BulkRegistrationImportRow {
+  name: string;           // Full name (will be split into first/last)
+  club_name?: string;     // Klubb
+  date_of_birth?: string; // Fødselsdato (DD.MM.YYYY or YYYY-MM-DD)
+  age_class: string;      // Påmeldt klasse (e.g., "Menn senior", "Kvinner 15 år")
+  event_name: string;     // Øvelse (e.g., "100m", "Lengde")
+}
+
+export interface BulkRegistrationImportResult {
+  success: boolean;
+  successCount: number;
+  errorCount: number;
+  errors: Array<{ row: number; message: string }>;
+  createdRegistrations: number;
+}
+
+function parseNorwegianDate(dateStr: string): string | null {
+  if (!dateStr) return null;
+
+  // Try DD.MM.YYYY format
+  const norMatch = dateStr.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (norMatch) {
+    const [, day, month, year] = norMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  // Try YYYY-MM-DD format
+  const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return dateStr;
+  }
+
+  return null;
+}
+
+function splitName(fullName: string): { first_name: string; last_name: string } {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) {
+    return { first_name: parts[0], last_name: '' };
+  }
+  const last_name = parts.pop() || '';
+  const first_name = parts.join(' ');
+  return { first_name, last_name };
+}
+
+function parseGenderFromAgeClass(ageClass: string): string {
+  const lower = ageClass.toLowerCase();
+  if (lower.includes('menn') || lower.includes('gutt') || lower.startsWith('m ') || lower.startsWith('g ')) {
+    return 'M';
+  }
+  if (lower.includes('kvinn') || lower.includes('jent') || lower.startsWith('k ') || lower.startsWith('j ')) {
+    return 'F';
+  }
+  return 'M'; // Default
+}
+
+export async function bulkImportRegistrations(
+  competitionId: string,
+  rows: BulkRegistrationImportRow[]
+): Promise<BulkRegistrationImportResult> {
+  console.log(`[CSV Import] Starting import of ${rows.length} rows for competition ${competitionId}`);
+
+  const supabase = await createClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    console.log('[CSV Import] User not logged in');
+    return {
+      success: false,
+      successCount: 0,
+      errorCount: 1,
+      errors: [{ row: 0, message: 'Du må være logget inn for å importere påmeldinger' }],
+      createdRegistrations: 0,
+    };
+  }
+
+  console.log(`[CSV Import] User: ${user.id}`);
+
+  // Get all events for this competition
+  const { data: events, error: eventsError } = await supabase
+    .from('events')
+    .select('id, name, event_code, gender, age_group')
+    .eq('competition_id', competitionId);
+
+  if (eventsError || !events) {
+    console.log('[CSV Import] Failed to fetch events:', eventsError);
+    return {
+      success: false,
+      successCount: 0,
+      errorCount: 1,
+      errors: [{ row: 0, message: 'Kunne ikke hente øvelser for stevnet' }],
+      createdRegistrations: 0,
+    };
+  }
+
+  console.log(`[CSV Import] Found ${events.length} events in competition`);
+
+  const errors: Array<{ row: number; message: string }> = [];
+  let successCount = 0;
+  let createdRegistrations = 0;
+
+  // Group rows by athlete (name + birth date)
+  const athleteMap = new Map<string, {
+    name: string;
+    club_name: string | undefined;
+    date_of_birth: string | null;
+    gender: string;
+    events: Array<{ event_id: string; row: number }>;
+  }>();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2; // +2 because row 1 is header, and we're 0-indexed
+
+    if (!row.name || !row.event_name || !row.age_class) {
+      errors.push({ row: rowNum, message: 'Mangler påkrevde felt (navn, øvelse, klasse)' });
+      continue;
+    }
+
+    const parsedDob = row.date_of_birth ? parseNorwegianDate(row.date_of_birth) : null;
+    const gender = parseGenderFromAgeClass(row.age_class);
+
+    // Find matching event
+    const eventName = row.event_name.trim().toLowerCase();
+    const ageClass = row.age_class.trim().toLowerCase();
+
+    // Extract age number from CSV age class (e.g., "G12" -> "12", "Gutter 12" -> "12", "12 år" -> "12")
+    const extractAgeNumber = (str: string): string | null => {
+      // Check for senior first
+      if (str.includes('senior')) return 'senior';
+      // Check for junior
+      if (str.includes('junior') || str.includes('u20') || str.includes('u23')) return 'junior';
+      // Extract numbers 10-17 (youth ages)
+      const match = str.match(/\b(1[0-7])\b/);
+      return match ? match[1] : null;
+    };
+
+    const csvAge = extractAgeNumber(ageClass);
+
+    // Match event by name/code and optionally by age_group/gender
+    const matchingEvent = events.find(e => {
+      const nameMatch = e.name.toLowerCase().includes(eventName) ||
+                        e.event_code.toLowerCase() === eventName ||
+                        eventName.includes(e.event_code.toLowerCase());
+      const genderMatch = e.gender === gender || e.gender === 'X';
+
+      // Compare normalized age numbers
+      const eventAge = extractAgeNumber(e.age_group.toLowerCase());
+      const ageMatch = csvAge && eventAge && csvAge === eventAge;
+
+      return nameMatch && genderMatch && ageMatch;
+    }) || events.find(e => {
+      // Fallback: match by event name/code and gender, but ONLY if no age could be extracted from CSV
+      // This prevents wrong age matches
+      if (csvAge) return false; // If CSV has an age, don't use fallback
+
+      const nameMatch = e.name.toLowerCase().includes(eventName) ||
+                        e.event_code.toLowerCase() === eventName ||
+                        eventName.includes(e.event_code.toLowerCase());
+      const genderMatch = e.gender === gender || e.gender === 'X';
+      return nameMatch && genderMatch;
+    });
+
+    if (!matchingEvent) {
+      errors.push({ row: rowNum, message: `Fant ikke øvelse "${row.event_name}" for klasse "${row.age_class}"` });
+      continue;
+    }
+
+    // Create athlete key
+    const athleteKey = `${row.name.trim().toLowerCase()}_${parsedDob || 'no-dob'}`;
+
+    if (!athleteMap.has(athleteKey)) {
+      athleteMap.set(athleteKey, {
+        name: row.name.trim(),
+        club_name: row.club_name?.trim(),
+        date_of_birth: parsedDob,
+        gender,
+        events: [],
+      });
+    }
+
+    // Check for duplicate event for same athlete (deduplicate within CSV)
+    const existingEvents = athleteMap.get(athleteKey)!.events;
+    const alreadyHasEvent = existingEvents.some(e => e.event_id === matchingEvent.id);
+
+    if (!alreadyHasEvent) {
+      existingEvents.push({
+        event_id: matchingEvent.id,
+        row: rowNum,
+      });
+    }
+    // If duplicate event in CSV, just skip silently (no error needed)
+  }
+
+  console.log(`[CSV Import] Grouped into ${athleteMap.size} unique athletes`);
+
+  // Create registrations for each athlete
+  let athleteIndex = 0;
+  for (const [, athlete] of athleteMap) {
+    athleteIndex++;
+    const { first_name, last_name } = splitName(athlete.name);
+
+    console.log(`[CSV Import] Processing athlete ${athleteIndex}/${athleteMap.size}: ${first_name} ${last_name}`);
+
+    // Check if athlete already has a registration in this competition
+    let registration: { id: string; athlete_id: string | null } | null = null;
+    let isExistingRegistration = false;
+
+    // Try to find existing registration by name and date_of_birth
+    const { data: existingReg } = await supabase
+      .from('registrations')
+      .select('id, athlete_id')
+      .eq('competition_id', competitionId)
+      .eq('first_name', first_name)
+      .eq('last_name', last_name)
+      .eq('date_of_birth', athlete.date_of_birth)
+      .single();
+
+    if (existingReg) {
+      console.log(`[CSV Import] Found existing registration for ${first_name} ${last_name}`);
+      registration = existingReg;
+      isExistingRegistration = true;
+    } else {
+      // Create new registration
+      const { data: newReg, error: regError } = await supabase
+        .from('registrations')
+        .insert({
+          competition_id: competitionId,
+          submitted_by: user.id,
+          first_name,
+          last_name,
+          date_of_birth: athlete.date_of_birth,
+          gender: athlete.gender,
+          nationality: 'NOR',
+          club_name: athlete.club_name || null,
+          status: 'approved', // Auto-approve CSV imports
+          reviewed_by: user.id,
+          reviewed_at: new Date().toISOString(),
+        })
+        .select('id, athlete_id')
+        .single();
+
+      if (regError) {
+        console.log(`[CSV Import] Error creating registration for ${first_name} ${last_name}:`, regError);
+        athlete.events.forEach(e => {
+          errors.push({ row: e.row, message: `Kunne ikke opprette påmelding: ${regError.message}` });
+        });
+        continue;
+      }
+
+      registration = newReg;
+      createdRegistrations++;
+    }
+
+    if (!registration) continue;
+
+    // Create registration events (skip if already exists)
+    for (const eventInfo of athlete.events) {
+      // Check if this registration_event already exists
+      const { data: existingRegEvent } = await supabase
+        .from('registration_events')
+        .select('id')
+        .eq('registration_id', registration.id)
+        .eq('event_id', eventInfo.event_id)
+        .single();
+
+      if (existingRegEvent) {
+        console.log(`[CSV Import] Event already registered for ${first_name} ${last_name}, skipping`);
+        successCount++; // Count as success since it's already registered
+        continue;
+      }
+
+      const { error: eventError } = await supabase
+        .from('registration_events')
+        .insert({
+          registration_id: registration.id,
+          event_id: eventInfo.event_id,
+          status: 'approved',
+        });
+
+      if (eventError) {
+        errors.push({ row: eventInfo.row, message: `Kunne ikke legge til øvelse: ${eventError.message}` });
+      } else {
+        successCount++;
+      }
+    }
+
+    // Find or create athlete record and create entries
+    let athleteId = registration.athlete_id;
+
+    if (!athleteId) {
+      // Try to find existing athlete
+      const { data: existingAthlete } = await supabase
+        .from('athletes')
+        .select('id')
+        .eq('first_name', first_name)
+        .eq('last_name', last_name)
+        .eq('date_of_birth', athlete.date_of_birth)
+        .single();
+
+      if (existingAthlete) {
+        athleteId = existingAthlete.id;
+      } else {
+        // Create new athlete
+        const { data: newAthlete } = await supabase
+          .from('athletes')
+          .insert({
+            first_name,
+            last_name,
+            date_of_birth: athlete.date_of_birth,
+            gender: athlete.gender,
+            nationality: 'NOR',
+            club_name: athlete.club_name || null,
+          })
+          .select()
+          .single();
+
+        if (newAthlete) {
+          athleteId = newAthlete.id;
+        }
+      }
+    }
+
+    // Create entries for each event
+    if (athleteId) {
+      for (const eventInfo of athlete.events) {
+        // Check if entry already exists
+        const { data: existingEntry } = await supabase
+          .from('entries')
+          .select('id')
+          .eq('event_id', eventInfo.event_id)
+          .eq('athlete_id', athleteId)
+          .single();
+
+        if (!existingEntry) {
+          await supabase
+            .from('entries')
+            .insert({
+              competition_id: competitionId,
+              event_id: eventInfo.event_id,
+              athlete_id: athleteId,
+              status: 'registered',
+            });
+        }
+      }
+
+      // Update registration with athlete_id
+      await supabase
+        .from('registrations')
+        .update({ athlete_id: athleteId })
+        .eq('id', registration.id);
+    }
+  }
+
+  revalidatePath(`/dashboard/competitions/${competitionId}/registration`);
+  revalidatePath(`/dashboard/competitions/${competitionId}/entries`);
+
+  console.log(`[CSV Import] Complete! Success: ${successCount}, Errors: ${errors.length}, Registrations: ${createdRegistrations}`);
+
+  return {
+    success: errors.length === 0,
+    successCount,
+    errorCount: errors.length,
+    errors,
+    createdRegistrations,
+  };
+}

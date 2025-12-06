@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "env -u NEXT_PUBLIC_SUPABASE_URL -u NEXT_PUBLIC_SUPABASE_ANON_KEY next dev",
+    "dev:local": "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

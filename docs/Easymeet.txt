@@ -1,0 +1,108 @@
+Beskrivelse av EasyMeet-app / nettbrettapplikasjon
+EasyMeet skal ha én felles app som brukes av alle roller i systemet – publikum, utøvere, trenere/ledere, øvelsesledere og arrangører. Hvilke funksjoner man ser og kan bruke styres av tilgangsnivåer og tilgangskoder, ikke av ulike apper.
+
+1. Grunnfunksjoner (åpen del – for alle brukere)
+Alle som laster ned appen skal enkelt kunne finne og åpne et stevne uten innlogging.
+I den åpne delen av appen skal man kunne:
+* Velge relevant stevne fra en oversikt (f.eks. kommende, pågående, ferdige stevner).
+* Se tidsskjema for stevnet, med tydelig oversikt per dag, øvelse og klasse.
+* Se startlister for hver øvelse:
+o Utøvernavn, klubb, klasse, eventuelt pers/årsbestenotering.
+* Se resultatlister:
+o Oppdateres live når øvelsesledere legger inn resultater.
+o Tydelig markering av ferdige øvelser vs. pågående.
+* Lese stevneinformasjon fra arrangør:
+o Praktisk info (parkering, garderober, kiosk, oppmøtetid osv.)
+o Eventuelle reglementspunkter eller spesielle beskjeder.
+* Motta nyhetsoppdateringer under stevnet:
+o Push-varsler og/eller “nyhets-feed” inne i appen (f.eks. forsinkelse i tidsskjema, været, rekord satt, endringer i øvelser etc.).
+Dette gjør appen nyttig for både publikum, foreldre, utøvere og trenere – selv uten ekstra innlogging eller spesielle rettigheter.
+
+2. Fremtidige funksjoner (Next step)
+Disse funksjonene er planlagt, men trenger ikke være med i første versjon:
+2.1 Utøverside (“Min side” for deltagere)
+På sikt skal utøvere kunne få en egen innlogget profil i appen. På sin side skal de kunne:
+* Se egne øvelser og starttider samlet.
+* Utføre digital avkrysning til øvelser.
+* Få personlige varsler (f.eks. “oppmøte om 20 min”, endringer i tidsskjema, resultater osv.).
+* På sikt: historikk over tidligere resultater, stevner osv.
+2.2 Trenere / lagledere
+Trenere og lagledere vil etter hvert få utvidede funksjoner:
+* Kunne krysse av for egne utøvere (digital avkrysning på vegne av laget).
+* Registrere og sende inn stafettlag direkte i appen.
+* Se oversikt over alle utøvere fra sin klubb/gruppe på et stevne.
+
+3. Tilgangsstyring for arrangør og funksjonærer
+Appen skal brukes aktivt av arrangør og funksjonærer (spesielt øvelsesledere) under stevnet.
+3.1 Arrangør (admin-tilgang)
+* Arrangøren får administrator-tilgang til sitt stevne.
+* Ved innlogging med sin arrangørkonto kommer de direkte inn i:
+o Administrasjon av stevneinformasjon (tekst, nyheter, praktisk info).
+o Oversikt over øvelser, tidsskjema, startlister og resultater.
+o Styring av hvilke øvelsesledere som har tilgang til hvilke øvelser.
+* Admin-tilgang krever ikke egen tilgangskode per øvelse – de ser alt som gjelder sitt stevne.
+3.2 Øvelsesleder (tilgangsnivå: Øvelsesleder)
+Denne rollen er helt sentral i appen, og UI må være svært enkelt og effektivt.
+Innlogging og tilgang:
+* Når en øvelsesleder åpner appen, legger han/hun inn sin tilgangskode.
+* Tilgangskoden er knyttet til:
+o Ett spesifikt stevne.
+o Én eller flere konkrete øvelser.
+* Dersom vedkommende er administrator, kommer han/hun heller direkte inn i admin-visningen ved innlogging.
+Hva øvelsesleder ser:
+* Når øvelsesleder har logget inn med tilgangskode:
+o Han/hun kommer rett inn på relevant stevne og øvelse.
+o Hele den offentlige informasjonen er tilgjengelig:
+* Tidsskjema, generell stevneinfo, nyheter.
+* Startliste for sin øvelse.
+* I tillegg får øvelsesleder et eget resultatregistreringspanel for sin øvelse.
+Hva øvelsesleder kan gjøre:
+* Registrere og oppdatere resultater fortløpende under øvelsen.
+* Legge inn nye utøvere manuelt i startlisten dersom noen etterslenges eller mangler, selv om startlisten er pushet fra hovedsystemet.
+* Endre feilregistrerte forsøk/resultater.
+* Når øvelsen er ferdig:
+o Markere øvelsen som avsluttet og sende endelig resultatliste tilbake til hovedsystemet.
+* Alle endringer skal:
+o Lagres og oppdateres live i systemet.
+o Være synlige for publikum og arrangør i sanntid.
+
+4. Krav til UI for øvelsesleder
+Brukerflaten for øvelsesleder skal være designet for bruk ute på banen, gjerne under tidspress. Hovedmål: rask, intuitiv og feilvennlig håndtering.
+Viktige krav:
+1. Tydelig oversikt over rekkefølge på utøverne
+o Listevisning med startnummer, navn, klubb og eventuelt forsøk.
+o Klart markert hvem som er “neste utøver”.
+o Mulighet for å sortere/filtrere ved behov (f.eks. pr. gruppe/heat).
+2. Enkel registrering av resultater
+o Rask input (tastatur for høyde/lengde/tid, eller valgknapper for “godkjent/ikke godkjent”, X/O/- etc. avhengig av øvelsestype).
+o Designet for få trykk per registrering (minimere scrolling og unødvendige steg).
+o Mulighet for å legge inn flere forsøk per utøver (særlig viktig i tekniske øvelser).
+3. Live-oppdatering og synlighet
+o Resultater som legges inn vises direkte i listen på skjermen.
+o Tydelig indikasjon på at data er lagret/synkronisert (f.eks. liten statusindikator).
+o Håndtering av midlertidig offline (buffring og synk når nett er tilbake) kan være et fremtidig krav.
+4. Enkel korrigering av feil
+o Øvelsesleder må enkelt kunne:
+* Trykke på en utøver og endre et resultat.
+* Endre rekkefølge dersom det er nødvendig (f.eks. ved omrokkering i forsøksrekkefølgen).
+o Endringer skal også oppdateres live i hovedsystemet.
+5. Klar sluttføring av øvelse
+o Egen knapp/handling for å “fullføre” øvelsen.
+o Gjerne en bekreftelse (f.eks. “Er du sikker på at øvelsen er ferdig?”).
+o Etter sluttføring sendes endelig resultatliste til hovedsystemet, men resultatene ligger fortsatt tilgjengelig som historikk.
+
+5. Oppsummert
+* Det er én EasyMeet-app for alle, med åpne funksjoner og rollebasert tilgang.
+* Alle brukere kan:
+o Finne stevner, se tidsskjema, startlister, resultater (live), stevneinfo og nyheter.
+* Arrangører har admin-tilgang til sitt stevne.
+* Øvelsesledere har en egen, optimalisert visning for registrering av resultater:
+o Tilgang via tilgangskode.
+o Ser alt som er offentlig for stevnet.
+o Kan kun endre og registrere resultater for sine øvelser.
+o Live-synk til systemet.
+* Fremtidige steg:
+o Egen “Min side” for utøvere med digital avkrysning.
+o Utvidede funksjoner for trenere/lagledere (avkrysning, stafettlag m.m.).
+Denne beskrivelsen kan brukes som grunnlag for videre spesifikasjon, UX-design og utvikling av EasyMeet-appen.
+

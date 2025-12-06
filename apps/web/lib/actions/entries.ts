@@ -861,6 +861,119 @@ export async function getCompetitionDashboardStats(competitionId: string) {
   };
 }
 
+// OPTIMIZED: Combined function that fetches all control dashboard data in minimal queries
+export interface ControlDashboardData {
+  competition: {
+    id: string;
+    name: string;
+    date: string;
+    status: string;
+    settings: Record<string, unknown> | null;
+  } | null;
+  events: Array<{
+    id: string;
+    name: string;
+    event_type: string;
+    status: string;
+    scheduled_time: string | null;
+    round: string;
+    gender: string;
+    age_group: string | null;
+    is_public: boolean;
+  }>;
+  entryCounts: Record<string, number>;
+  resultsCounts: Record<string, number>;
+  stats: {
+    totalEntries: number;
+    totalResults: number;
+    completedEvents: number;
+    totalEvents: number;
+  };
+}
+
+export async function getControlDashboardData(competitionId: string): Promise<ControlDashboardData> {
+  const supabase = await createClient();
+
+  // Fetch all base data in parallel (3 queries instead of 5+ separate calls)
+  const [competitionRes, eventsRes, entriesRes] = await Promise.all([
+    supabase
+      .from('competitions')
+      .select('id, name, date, status, settings')
+      .eq('id', competitionId)
+      .single(),
+    supabase
+      .from('events')
+      .select('id, name, event_type, status, scheduled_time, round, gender, age_group, is_public')
+      .eq('competition_id', competitionId)
+      .order('scheduled_time', { ascending: true, nullsFirst: false }),
+    supabase
+      .from('entries')
+      .select('id, event_id')
+      .eq('competition_id', competitionId),
+  ]);
+
+  const competition = competitionRes.data;
+  const events = (eventsRes.data || []) as ControlDashboardData['events'];
+  const entries = entriesRes.data || [];
+
+  // Calculate entry counts per event (in memory)
+  const entryCounts: Record<string, number> = {};
+  for (const entry of entries) {
+    entryCounts[entry.event_id] = (entryCounts[entry.event_id] || 0) + 1;
+  }
+
+  // Get results counts - use single queries per table instead of N+1
+  const resultsCounts: Record<string, number> = {};
+  let totalResults = 0;
+
+  if (entries.length > 0) {
+    const entryIds = entries.map(e => e.id);
+
+    // Fetch all results with entry_id in parallel (3 queries total, not N*3)
+    const [trackRes, verticalRes, fieldRes] = await Promise.all([
+      supabase.from('track_results').select('entry_id').in('entry_id', entryIds),
+      supabase.from('vertical_results').select('entry_id').in('entry_id', entryIds),
+      supabase.from('field_results').select('entry_id').in('entry_id', entryIds),
+    ]);
+
+    // Build entry_id to event_id lookup
+    const entryToEvent: Record<string, string> = {};
+    for (const entry of entries) {
+      entryToEvent[entry.id] = entry.event_id;
+    }
+
+    // Aggregate results counts per event
+    const allResults = [
+      ...(trackRes.data || []),
+      ...(verticalRes.data || []),
+      ...(fieldRes.data || []),
+    ];
+
+    for (const result of allResults) {
+      const eventId = entryToEvent[result.entry_id];
+      if (eventId) {
+        resultsCounts[eventId] = (resultsCounts[eventId] || 0) + 1;
+        totalResults++;
+      }
+    }
+  }
+
+  const completedEvents = events.filter(e => e.status === 'completed').length;
+
+  return {
+    competition,
+    events,
+    entryCounts,
+    resultsCounts,
+    stats: {
+      totalEntries: entries.length,
+      totalResults,
+      completedEvents,
+      totalEvents: events.length,
+    },
+  };
+}
+
 // Bulk import entries from CSV data
 export interface BulkEntryImportRow {
   bib_number?: string;

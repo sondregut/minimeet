@@ -14,14 +14,21 @@ const ALL_EVENTS = [
   ...ATHLETICS_EVENTS.throw,
 ];
 
+// Norwegian Athletics Federation age groups
 const AGE_GROUPS = [
+  'Rekrutt 6-8',
+  '9 år',
+  '10 år',
+  '11 år',
+  '12 år',
+  '13 år',
+  '14 år',
+  '15 år',
+  '16 år',
+  '17 år',
+  'Junior 18-19',
+  'Junior 20-22',
   'Senior',
-  'U23',
-  'U20',
-  'U18',
-  'U16',
-  'U14',
-  'U12',
   'Masters 35+',
   'Masters 40+',
   'Masters 45+',

@@ -30,11 +30,12 @@ export default function BibAssignmentPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
   const [competition, setCompetition] = useState<{ name: string } | null>(null);
   const [athletes, setAthletes] = useState<AthleteWithBib[]>([]);
   const [bibNumbers, setBibNumbers] = useState<Record<string, string>>({});
   const [startingNumber, setStartingNumber] = useState('1');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -69,12 +70,13 @@ export default function BibAssignmentPage() {
       ...prev,
       [athleteId]: value,
     }));
+    setHasUnsavedChanges(true);
   }
 
   async function handleSave() {
     setSaving(true);
     setError(null);
-    setSuccess(false);
+    setSuccess(null);
 
     try {
       // Build assignments from changed bib numbers
@@ -90,7 +92,7 @@ export default function BibAssignmentPage() {
       }
 
       if (assignments.length === 0) {
-        setError('No changes to save');
+        setError('Ingen endringer å lagre');
         setSaving(false);
         return;
       }
@@ -100,7 +102,8 @@ export default function BibAssignmentPage() {
       if (result.error) {
         setError(result.error);
       } else {
-        setSuccess(true);
+        setSuccess('Startnumre lagret!');
+        setHasUnsavedChanges(false);
         // Update local state to reflect saved values
         setAthletes((prev) =>
           prev.map((a) => ({
@@ -108,11 +111,11 @@ export default function BibAssignmentPage() {
             bib_number: bibNumbers[a.athlete_id] || null,
           }))
         );
-        setTimeout(() => setSuccess(false), 3000);
+        setTimeout(() => setSuccess(null), 3000);
       }
     } catch (err) {
       console.error('Error saving bibs:', err);
-      setError('Failed to save bib numbers');
+      setError('Kunne ikke lagre startnumre');
     } finally {
       setSaving(false);
     }
@@ -121,7 +124,7 @@ export default function BibAssignmentPage() {
   async function handleAutoAssign() {
     setSaving(true);
     setError(null);
-    setSuccess(false);
+    setSuccess(null);
 
     try {
       const start = parseInt(startingNumber, 10) || 1;
@@ -140,12 +143,13 @@ export default function BibAssignmentPage() {
         });
         setBibNumbers(newBibs);
 
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
+        setHasUnsavedChanges(false);
+        setSuccess(`${athletesData.length} startnumre tildelt og lagret automatisk!`);
+        setTimeout(() => setSuccess(null), 4000);
       }
     } catch (err) {
       console.error('Error auto-assigning bibs:', err);
-      setError('Failed to auto-assign bib numbers');
+      setError('Kunne ikke tildele startnumre automatisk');
     } finally {
       setSaving(false);
     }
@@ -168,25 +172,27 @@ export default function BibAssignmentPage() {
           className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-4"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to {competition?.name || 'Competition'}
+          Tilbake til {competition?.name || 'stevnet'}
         </Link>
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Assign Bib Numbers</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Tildel startnumre</h1>
             <p className="text-gray-600 mt-1">
-              {athletes.length} athlete{athletes.length !== 1 ? 's' : ''} registered
+              {athletes.length} utøver{athletes.length !== 1 ? 'e' : ''} påmeldt
             </p>
           </div>
 
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
+          {hasUnsavedChanges && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Lagrer...' : 'Lagre endringer'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -196,7 +202,7 @@ export default function BibAssignmentPage() {
       )}
       {success && (
         <div className="p-4 rounded-lg bg-green-50 text-green-600 text-sm">
-          Bib numbers saved successfully!
+          {success}
         </div>
       )}
 
@@ -205,10 +211,10 @@ export default function BibAssignmentPage() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <div className="flex items-center gap-2">
             <Wand2 className="w-5 h-5 text-purple-500" />
-            <span className="font-medium text-gray-700">Auto-assign</span>
+            <span className="font-medium text-gray-700">Automatisk tildeling</span>
           </div>
           <div className="flex items-center gap-3">
-            <label className="text-sm text-gray-600">Starting number:</label>
+            <label className="text-sm text-gray-600">Start fra:</label>
             <input
               type="number"
               min="1"
@@ -221,11 +227,11 @@ export default function BibAssignmentPage() {
               disabled={saving}
               className="px-4 py-2 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
             >
-              Assign All
+              {saving ? 'Tildeler...' : 'Tildel alle'}
             </button>
           </div>
           <span className="text-xs text-gray-500">
-            Assigns sequential numbers sorted by last name
+            Tildeler fortløpende numre sortert på etternavn (lagres automatisk)
           </span>
         </div>
       </div>
@@ -234,15 +240,15 @@ export default function BibAssignmentPage() {
       {athletes.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-12 text-center">
           <Hash className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No athletes registered</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Ingen utøvere påmeldt</h3>
           <p className="text-gray-500 mb-4">
-            Add athletes to events before assigning bib numbers.
+            Legg til utøvere i øvelser før du tildeler startnumre.
           </p>
           <Link
             href={`/dashboard/competitions/${competitionId}`}
             className="text-blue-600 hover:text-blue-800 font-medium"
           >
-            View Events
+            Se øvelser
           </Link>
         </div>
       ) : (
@@ -251,16 +257,16 @@ export default function BibAssignmentPage() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-32">
-                  Bib #
+                  Startnr
                 </th>
                 <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">
-                  Athlete
+                  Utøver
                 </th>
                 <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">
-                  Club
+                  Klubb
                 </th>
                 <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-24">
-                  Events
+                  Øvelser
                 </th>
               </tr>
             </thead>
@@ -294,7 +300,7 @@ export default function BibAssignmentPage() {
                   </td>
                   <td className="px-4 py-4">
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      {athlete.entry_ids.length} event{athlete.entry_ids.length !== 1 ? 's' : ''}
+                      {athlete.entry_ids.length} øvelse{athlete.entry_ids.length !== 1 ? 'r' : ''}
                     </span>
                   </td>
                 </tr>
@@ -307,10 +313,10 @@ export default function BibAssignmentPage() {
       {/* Help Text */}
       <div className="text-sm text-gray-500 space-y-1">
         <p>
-          <strong>Tip:</strong> Each athlete has one bib number across all events in this competition.
+          <strong>Tips:</strong> Hver utøver har ett startnummer på tvers av alle øvelser i stevnet.
         </p>
         <p>
-          Changes are applied to all event entries for each athlete.
+          Manuelle endringer må lagres med knappen som vises øverst. Automatisk tildeling lagres umiddelbart.
         </p>
       </div>
     </div>

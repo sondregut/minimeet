@@ -61,8 +61,19 @@ export const EVENT_TEMPLATES: EventTemplate[] = [
   { name: 'Hammer', event_code: 'HT', event_type: 'throw', category: 'throws' },
 
   // Relays
-  { name: '4x100m Relay', event_code: '4x100m', event_type: 'relay', category: 'relay' },
-  { name: '4x400m Relay', event_code: '4x400m', event_type: 'relay', category: 'relay' },
+  { name: '4x60m stafett', event_code: '4x60m', event_type: 'relay', category: 'relay' },
+  { name: '4x100m stafett', event_code: '4x100m', event_type: 'relay', category: 'relay' },
+  { name: '4x200m stafett', event_code: '4x200m', event_type: 'relay', category: 'relay' },
+  { name: '4x400m stafett', event_code: '4x400m', event_type: 'relay', category: 'relay' },
+  { name: '3x600m stafett', event_code: '3x600m', event_type: 'relay', category: 'relay' },
+  { name: '3x800m stafett', event_code: '3x800m', event_type: 'relay', category: 'relay' },
+  { name: '3x1000m stafett', event_code: '3x1000m', event_type: 'relay', category: 'relay' },
+  { name: '3x1500m stafett', event_code: '3x1500m', event_type: 'relay', category: 'relay' },
+  { name: 'Hurricane-stafett 1000m', event_code: 'hurricane_1000m', event_type: 'relay', category: 'relay' },
+  { name: 'Hurricane-stafett 2000m', event_code: 'hurricane_2000m', event_type: 'relay', category: 'relay' },
+  { name: 'Hurricane-stafett 3000m', event_code: 'hurricane_3000m', event_type: 'relay', category: 'relay' },
+  { name: '8x200m stafett', event_code: '8x200m', event_type: 'relay', category: 'relay' },
+  { name: 'Donaldstafett', event_code: 'donaldstafett', event_type: 'relay', category: 'relay' },
 ];
 
 // Quick access by category
@@ -84,23 +95,28 @@ export const COMMON_EVENTS = [
   'SP', 'DT', 'JT',
 ];
 
-// Age groups commonly used in Norway
+// Age groups - Norwegian Athletics Federation standard (Norges Friidrettsforbund)
 export const AGE_GROUPS = [
+  'Rekrutt 6-8',
+  '9 år',
+  '10 år',
+  '11 år',
+  '12 år',
+  '13 år',
+  '14 år',
+  '15 år',
+  '16 år',
+  '17 år',
+  'Junior 18-19',
+  'Junior 20-22',
   'Senior',
-  'U23',
-  'U20',
-  'U18',
-  'U16',
-  'U14',
-  'U12',
-  'U10',
 ];
 
 // Gender options
 export const GENDERS = [
-  { value: 'M', label: 'Men' },
-  { value: 'W', label: 'Women' },
-  { value: 'X', label: 'Mixed' },
+  { value: 'M', label: 'Gutter/Menn' },
+  { value: 'W', label: 'Jenter/Kvinner' },
+  { value: 'X', label: 'Blandet' },
 ];
 
 // Helper to generate event name with gender and age

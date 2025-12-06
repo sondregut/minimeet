@@ -26,7 +26,7 @@ async function createPublicClient() {
   );
 }
 
-// Get public competition (published or active status only)
+// Get public competition (published, active, or completed status only)
 export async function getPublicCompetition(id: string) {
   const supabase = await createPublicClient();
 
@@ -69,7 +69,7 @@ export async function getPublicCompetitions() {
   return data || [];
 }
 
-// Get events for a public competition
+// Get events for a public competition with club participation info
 export async function getPublicEvents(competitionId: string) {
   const supabase = await createPublicClient();
 
@@ -84,7 +84,80 @@ export async function getPublicEvents(competitionId: string) {
     return [];
   }
 
+  // Get club participation for each event
+  const eventIds = data?.map(e => e.id) || [];
+
+  if (eventIds.length > 0) {
+    const { data: entries } = await supabase
+      .from('entries')
+      .select(`
+        event_id,
+        athlete:athletes(club_name)
+      `)
+      .in('event_id', eventIds);
+
+    // Build event-to-clubs mapping
+    const eventClubsMap: Record<string, string[]> = {};
+    entries?.forEach((entry: any) => {
+      const eventId = entry.event_id;
+      const clubName = entry.athlete?.club_name;
+      if (clubName) {
+        if (!eventClubsMap[eventId]) {
+          eventClubsMap[eventId] = [];
+        }
+        if (!eventClubsMap[eventId].includes(clubName)) {
+          eventClubsMap[eventId].push(clubName);
+        }
+      }
+    });
+
+    // Add clubs to events
+    return data?.map(event => ({
+      ...event,
+      clubs: eventClubsMap[event.id] || [],
+    })) || [];
+  }
+
   return data || [];
+}
+
+// Get all clubs participating in a competition
+export async function getCompetitionClubs(competitionId: string): Promise<string[]> {
+  const supabase = await createPublicClient();
+
+  // Get all event IDs for this competition
+  const { data: events } = await supabase
+    .from('events')
+    .select('id')
+    .eq('competition_id', competitionId);
+
+  if (!events || events.length === 0) return [];
+
+  const eventIds = events.map(e => e.id);
+
+  // Get all entries with athlete club info
+  const { data: entries, error } = await supabase
+    .from('entries')
+    .select(`
+      athlete:athletes(club_name)
+    `)
+    .in('event_id', eventIds);
+
+  if (error) {
+    console.error('Error fetching competition clubs:', error);
+    return [];
+  }
+
+  // Extract unique clubs
+  const clubs = new Set<string>();
+  entries?.forEach((entry: any) => {
+    const clubName = entry.athlete?.club_name;
+    if (clubName && clubName.trim()) {
+      clubs.add(clubName);
+    }
+  });
+
+  return Array.from(clubs).sort();
 }
 
 // Get public event with results

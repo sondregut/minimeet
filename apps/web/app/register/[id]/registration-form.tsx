@@ -353,12 +353,12 @@ export function RegistrationForm({ competitionId, events, settings, competitionD
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-gray-900">{event.name}</span>
                           <span className="text-sm text-gray-500">
-                            {event.gender === 'M' ? 'Men' : event.gender === 'W' ? 'Women' : 'Mixed'} / {event.age_group}
+                            {event.gender === 'M' ? 'Gutter/Menn' : event.gender === 'W' ? 'Jenter/Kvinner' : 'Blandet'} / {event.age_group}
                           </span>
                         </div>
                         {event.scheduled_time && (
                           <p className="text-sm text-gray-500 mt-1">
-                            Scheduled: {new Date(event.scheduled_time).toLocaleTimeString('en-US', {
+                            Kl. {new Date(event.scheduled_time).toLocaleTimeString('no-NO', {
                               hour: '2-digit',
                               minute: '2-digit',
                             })}

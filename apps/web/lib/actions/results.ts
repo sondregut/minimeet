@@ -365,6 +365,9 @@ export async function saveFieldResult(
     }
   }
 
+  // Auto-recalculate places after saving
+  await recalculateFieldEventPlaces(eventId, competitionId);
+
   revalidatePath(`/dashboard/competitions/${competitionId}/events/${eventId}`);
 
   return { success: true, id: resultId };
@@ -447,21 +450,29 @@ export async function saveVerticalResult(
     return { error: 'You must be logged in to record results' };
   }
 
-  // Calculate best height (highest cleared)
+  // Calculate best height (highest cleared) - convert from cm to meters for storage
   const clearedHeights = input.attempts
     .filter(a => a.outcome === 'o')
     .map(a => a.height);
-  const bestHeight = clearedHeights.length > 0
+  const bestHeightCm = clearedHeights.length > 0
     ? Math.max(...clearedHeights)
     : null;
+  // Convert to meters for database storage (column is NUMERIC(4,2) which supports up to 99.99)
+  const bestHeight = bestHeightCm !== null ? bestHeightCm / 100 : null;
 
   // Count total attempts and misses
+  // NOTE: For tie-breaking, we only count misses at heights that were CLEARED.
+  // Misses at heights above the best cleared height are NOT relevant (WA/IAAF rules).
+  // Example: If athlete A clears 1.20 (1 miss), stops, and athlete B clears 1.20 (1 miss)
+  // then fails XXX at 1.25, they should be tied (both have 1 miss at cleared heights).
   const totalAttempts = input.attempts.filter(a => a.outcome === 'o' || a.outcome === 'x').length;
-  const totalMisses = input.attempts.filter(a => a.outcome === 'x').length;
+  const totalMisses = bestHeightCm
+    ? input.attempts.filter(a => a.outcome === 'x' && a.height <= bestHeightCm).length
+    : 0;
 
-  // Count misses at best height (for tie-breaking)
-  const missesAtBest = bestHeight
-    ? input.attempts.filter(a => a.height === bestHeight && a.outcome === 'x').length
+  // Count misses at best height (for tie-breaking) - use cm value for comparison
+  const missesAtBest = bestHeightCm
+    ? input.attempts.filter(a => a.height === bestHeightCm && a.outcome === 'x').length
     : 0;
 
   // Check if result exists
@@ -523,10 +534,10 @@ export async function saveVerticalResult(
     resultId = data.id;
   }
 
-  // Insert attempts
+  // Insert attempts - convert height from cm to meters for database storage
   const attemptsToInsert = input.attempts.map(a => ({
     result_id: resultId,
-    height: a.height,
+    height: a.height / 100, // Convert cm to meters for DECIMAL(4,2) column
     attempt_number: a.attempt_number,
     outcome: a.outcome,
   }));
@@ -541,6 +552,9 @@ export async function saveVerticalResult(
       return { error: attemptsError.message };
     }
   }
+
+  // Auto-recalculate places after saving
+  await recalculateVerticalEventPlaces(eventId, competitionId);
 
   revalidatePath(`/dashboard/competitions/${competitionId}/events/${eventId}`);
 

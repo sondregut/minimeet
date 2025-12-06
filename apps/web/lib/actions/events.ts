@@ -168,6 +168,23 @@ export async function updateEventStatus(
   }
 
   const compId = competitionId || currentEvent.competition_id;
+
+  // Auto-activate competition if it's still in draft and an event is starting or completing
+  if (status === 'in_progress' || status === 'completed') {
+    const { data: competition } = await supabase
+      .from('competitions')
+      .select('status')
+      .eq('id', compId)
+      .single();
+
+    if (competition?.status === 'draft') {
+      await supabase
+        .from('competitions')
+        .update({ status: 'active' })
+        .eq('id', compId);
+    }
+  }
+
   revalidatePath(`/dashboard/competitions/${compId}`);
   revalidatePath(`/dashboard/competitions/${compId}/control`);
   revalidatePath(`/dashboard/competitions/${compId}/events/${eventId}`);
@@ -570,4 +587,176 @@ export async function scratchNoShows(
 
   revalidatePath(`/dashboard/competitions/${competitionId}`);
   return { success: true, scratchedCount: entryIds.length };
+}
+
+// ============================================================================
+// Vertical Event Settings (High Jump & Pole Vault)
+// ============================================================================
+
+export interface VerticalSettings {
+  start_height: number;      // Starting height in cm
+  increment: number;         // Height increment in cm
+  heights: number[];         // List of heights (generated or manual)
+  current_height_index: number; // Which height is currently active
+}
+
+/**
+ * Update vertical event settings (heights for high jump/pole vault)
+ */
+export async function updateVerticalSettings(
+  eventId: string,
+  competitionId: string,
+  settings: VerticalSettings
+): Promise<EventResult> {
+  const supabase = await createClient();
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return { error: 'You must be logged in to update event settings' };
+  }
+
+  // Get current event settings
+  const { data: event, error: fetchError } = await supabase
+    .from('events')
+    .select('settings')
+    .eq('id', eventId)
+    .single();
+
+  if (fetchError || !event) {
+    return { error: 'Event not found' };
+  }
+
+  // Merge with existing settings
+  const updatedSettings = {
+    ...(event.settings || {}),
+    vertical: settings,
+  };
+
+  const { error } = await supabase
+    .from('events')
+    .update({ settings: updatedSettings })
+    .eq('id', eventId);
+
+  if (error) {
+    console.error('Error updating vertical settings:', error);
+    return { error: error.message };
+  }
+
+  revalidatePath(`/dashboard/competitions/${competitionId}`);
+  revalidatePath(`/dashboard/competitions/${competitionId}/field-official`);
+
+  return { success: true };
+}
+
+/**
+ * Get event entries with athlete information
+ */
+export async function getEventEntries(eventId: string) {
+  const supabase = await createClient();
+
+  const { data: entries, error } = await supabase
+    .from('event_entries')
+    .select(`
+      id,
+      event_id,
+      athlete_id,
+      bib_number,
+      seed_mark,
+      status,
+      lane,
+      heat,
+      position,
+      athletes!inner(
+        id,
+        first_name,
+        last_name,
+        club,
+        birth_year,
+        gender
+      )
+    `)
+    .eq('event_id', eventId)
+    .order('bib_number', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching event entries:', error);
+    return [];
+  }
+
+  return entries || [];
+}
+
+/**
+ * Get heights for a vertical event from settings
+ */
+export async function getEventHeights(eventId: string): Promise<number[]> {
+  const supabase = await createClient();
+
+  const { data: event, error } = await supabase
+    .from('events')
+    .select('settings')
+    .eq('id', eventId)
+    .single();
+
+  if (error || !event) {
+    return [];
+  }
+
+  const settings = event.settings as { vertical?: { heights?: number[] } } | null;
+  return settings?.vertical?.heights || [];
+}
+
+// generateHeights is a pure utility function - moved to vertical-setup.tsx
+
+/**
+ * Advance to next height in vertical event
+ */
+export async function advanceToNextHeight(
+  eventId: string,
+  competitionId: string
+): Promise<EventResult> {
+  const supabase = await createClient();
+
+  const { data: event, error: fetchError } = await supabase
+    .from('events')
+    .select('settings')
+    .eq('id', eventId)
+    .single();
+
+  if (fetchError || !event) {
+    return { error: 'Event not found' };
+  }
+
+  const settings = event.settings || {};
+  const vertical = settings.vertical as VerticalSettings | undefined;
+
+  if (!vertical || !vertical.heights || vertical.heights.length === 0) {
+    return { error: 'No heights configured for this event' };
+  }
+
+  const currentIndex = vertical.current_height_index || 0;
+  const nextIndex = Math.min(currentIndex + 1, vertical.heights.length - 1);
+
+  const updatedSettings = {
+    ...settings,
+    vertical: {
+      ...vertical,
+      current_height_index: nextIndex,
+    },
+  };
+
+  const { error } = await supabase
+    .from('events')
+    .update({ settings: updatedSettings })
+    .eq('id', eventId);
+
+  if (error) {
+    console.error('Error advancing height:', error);
+    return { error: error.message };
+  }
+
+  revalidatePath(`/dashboard/competitions/${competitionId}/field-official`);
+
+  return { success: true };
 }

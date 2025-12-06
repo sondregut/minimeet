@@ -7,6 +7,7 @@ import { getTrackResultsByEvent, getFieldResultsByEvent, getVerticalResultsByEve
 import EventStatusControls from '@/components/EventStatusControls';
 import ExportResultsButton from '@/components/ExportResultsButton';
 import RecalculateButton from '@/components/RecalculateButton';
+import RelayTeamManager from '@/components/RelayTeamManager';
 import {
   ArrowLeft,
   Clock,
@@ -135,6 +136,7 @@ export default async function EventDetailPage({
     return (a.place || 999) - (b.place || 999);
   });
 
+  const isRelayEvent = event.event_type === 'relay';
   const isTrackEvent = event.event_type === 'track' || event.event_type === 'relay' || event.event_type === 'road';
   const isFieldEvent = event.event_type === 'field_horizontal' || event.event_type === 'throw';
   const isVerticalEvent = event.event_type === 'field_vertical';
@@ -585,121 +587,135 @@ export default async function EventDetailPage({
         </div>
       )}
 
-      {/* Entries / Start List */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Start List</h2>
-          <div className="flex items-center gap-3">
-            {entries.length > 0 && (
-              <Link
-                href={`/dashboard/competitions/${competitionId}/events/${eventId}/startlist/manage`}
-                className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-md hover:bg-gray-50 transition-colors"
-              >
-                <FileText className="w-4 h-4" />
-                Start List
-              </Link>
-            )}
-            <Link
-              href={`/dashboard/competitions/${competitionId}/events/${eventId}/entries/new`}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-900 text-white font-semibold rounded-md hover:bg-blue-800 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Add Entry
-            </Link>
-          </div>
+      {/* Relay Teams (for relay events) */}
+      {isRelayEvent && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Stafettlag</h2>
+          <RelayTeamManager
+            eventId={eventId}
+            competitionId={competitionId}
+            eventCode={event.event_code}
+          />
         </div>
+      )}
 
-        {entries.length === 0 ? (
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-            <div className="py-12">
-              <div className="text-center">
-                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  No entries yet
-                </h3>
-                <p className="text-gray-500 mb-6">
-                  Add athletes to this event to create a start list
-                </p>
+      {/* Entries / Start List (for non-relay events) */}
+      {!isRelayEvent && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Start List</h2>
+            <div className="flex items-center gap-3">
+              {entries.length > 0 && (
                 <Link
-                  href={`/dashboard/competitions/${competitionId}/events/${eventId}/entries/new`}
-                  className="inline-flex items-center gap-2 px-5 py-3 bg-blue-900 text-white font-semibold rounded-md hover:bg-blue-800 transition-colors"
+                  href={`/dashboard/competitions/${competitionId}/events/${eventId}/startlist/manage`}
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-md hover:bg-gray-50 transition-colors"
                 >
-                  <Plus className="w-4 h-4" />
-                  Add Entry
+                  <FileText className="w-4 h-4" />
+                  Start List
                 </Link>
-              </div>
+              )}
+              <Link
+                href={`/dashboard/competitions/${competitionId}/events/${eventId}/entries/new`}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-900 text-white font-semibold rounded-md hover:bg-blue-800 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Entry
+              </Link>
             </div>
           </div>
-        ) : (
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-16">
-                    {event.event_type === 'track' ? 'Lane' : 'Pos'}
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-20">
-                    Bib
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">
-                    Athlete
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">
-                    Club
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-24">
-                    Seed
-                  </th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-28">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {entries.map((entry) => {
-                  const entryBadge = getEntryStatusBadge(entry.status);
-                  return (
-                    <tr key={entry.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-4 text-gray-600">
-                        {entry.lane_or_position || '-'}
-                      </td>
-                      <td className="px-4 py-4 font-medium text-gray-900">
-                        {entry.bib_number || '-'}
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                            <User className="w-4 h-4 text-gray-400" />
+
+          {entries.length === 0 ? (
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+              <div className="py-12">
+                <div className="text-center">
+                  <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    No entries yet
+                  </h3>
+                  <p className="text-gray-500 mb-6">
+                    Add athletes to this event to create a start list
+                  </p>
+                  <Link
+                    href={`/dashboard/competitions/${competitionId}/events/${eventId}/entries/new`}
+                    className="inline-flex items-center gap-2 px-5 py-3 bg-blue-900 text-white font-semibold rounded-md hover:bg-blue-800 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Entry
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-16">
+                      {event.event_type === 'track' ? 'Lane' : 'Pos'}
+                    </th>
+                    <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-20">
+                      Bib
+                    </th>
+                    <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">
+                      Athlete
+                    </th>
+                    <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3">
+                      Club
+                    </th>
+                    <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-24">
+                      Seed
+                    </th>
+                    <th className="text-left text-xs font-semibold uppercase tracking-wider text-gray-500 px-4 py-3 w-28">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {entries.map((entry) => {
+                    const entryBadge = getEntryStatusBadge(entry.status);
+                    return (
+                      <tr key={entry.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-4 text-gray-600">
+                          {entry.lane_or_position || '-'}
+                        </td>
+                        <td className="px-4 py-4 font-medium text-gray-900">
+                          {entry.bib_number || '-'}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                              <User className="w-4 h-4 text-gray-400" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                {entry.athlete?.first_name} {entry.athlete?.last_name}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {entry.athlete?.nationality}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium text-gray-900">
-                              {entry.athlete?.first_name} {entry.athlete?.last_name}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {entry.athlete?.nationality}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-gray-600">
-                        {entry.athlete?.club_name || '-'}
-                      </td>
-                      <td className="px-4 py-4 text-gray-600">
-                        {entry.seed_mark || '-'}
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${entryBadge.bg} ${entryBadge.text}`}>
-                          {entry.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                        </td>
+                        <td className="px-4 py-4 text-gray-600">
+                          {entry.athlete?.club_name || '-'}
+                        </td>
+                        <td className="px-4 py-4 text-gray-600">
+                          {entry.seed_mark || '-'}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${entryBadge.bg} ${entryBadge.text}`}>
+                            {entry.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
