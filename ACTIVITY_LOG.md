@@ -6,6 +6,23 @@ This log tracks all significant changes and updates to the MiniMeet application.
 
 ## 2025-12-06
 
+### BUG FIX: Mobile App Distance Unit Conversion
+Fixed critical bug where mobile app was storing distances in meters instead of centimeters.
+
+**Problem**: Results entered on mobile (e.g., 11.0m) were displayed as 0.11m because:
+- Web app stores distances in **centimeters** (e.g., 1100 for 11.00m)
+- Mobile app was storing in **meters** without conversion
+- When loaded, values were divided by 100 (web convention), causing the error
+
+**Changes** in `apps/mobile/app/(official)/record.tsx`:
+1. **Saving**: Now multiplies input by 100 (meters → centimeters) before saving
+2. **Loading**: Now divides by 100 (centimeters → meters) when loading from database
+3. **Local state**: Properly converts the result and best_mark back to meters for display
+
+**Note**: Existing incorrectly saved data will need to be re-entered.
+
+---
+
 ### Three-View Result Registration UI - MAJOR ENHANCEMENT
 Implemented full UX specification for result registration in technical events with three-view swipe navigation.
 

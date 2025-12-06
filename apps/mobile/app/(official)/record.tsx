@@ -12,9 +12,11 @@ import {
   Platform,
   Dimensions,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../../src/contexts/AuthContext';
@@ -71,6 +73,22 @@ export default function RecordScreen() {
   const [saving, setSaving] = useState(false);
   const [currentRound, setCurrentRound] = useState(1);
 
+  // Finale mode state
+  const [isFinalsMode, setIsFinalsMode] = useState(false);
+  const [showFinalsPrompt, setShowFinalsPrompt] = useState(false);
+  const [finalistIds, setFinalistIds] = useState<string[]>([]); // IDs of top 8 athletes
+
+  // Add participant modal state
+  const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [addingParticipant, setAddingParticipant] = useState(false);
+  const [newParticipant, setNewParticipant] = useState({
+    firstName: '',
+    lastName: '',
+    dateOfBirth: '',
+    club: '',
+    gender: 'M' as 'M' | 'W' | 'X',
+  });
+
   // View navigation state
   const [currentViewIndex, setCurrentViewIndex] = useState(1); // Start on Registration view
   const scrollViewRef = useRef<ScrollView>(null);
@@ -86,12 +104,23 @@ export default function RecordScreen() {
     }
   }, [isAuthenticated, authLoading]);
 
-  // Load athletes for the event(s)
-  useEffect(() => {
-    if (session && eventIds.length > 0) {
-      loadAthletes();
-    }
-  }, [session, params.eventIds]);
+  // Load athletes for the event(s) - using useFocusEffect to reload when returning to screen
+  useFocusEffect(
+    useCallback(() => {
+      const currentEventIds = params.eventIds?.split(',') || [];
+      console.log('[RecordScreen] Screen focused');
+      console.log('[RecordScreen] params.eventIds:', params.eventIds);
+      console.log('[RecordScreen] currentEventIds:', currentEventIds);
+      console.log('[RecordScreen] session:', session ? 'exists' : 'null');
+
+      if (session && currentEventIds.length > 0) {
+        console.log('[RecordScreen] Loading athletes...');
+        loadAthletes();
+      } else {
+        console.log('[RecordScreen] Skipping load - session:', !!session, 'eventIds count:', currentEventIds.length);
+      }
+    }, [session, params.eventIds])
+  );
 
   // Scroll to initial view (Registration) when component mounts
   useEffect(() => {
@@ -104,6 +133,7 @@ export default function RecordScreen() {
 
   const loadAthletes = async () => {
     setLoading(true);
+    console.log('[loadAthletes] Starting load for eventIds:', eventIds);
     try {
       // Fetch entries (athletes) for the event(s) with existing results
       const { data, error } = await supabase
@@ -142,9 +172,19 @@ export default function RecordScreen() {
         .order('bib_number');
 
       if (error) {
-        console.error('Error loading athletes:', error);
+        console.error('[loadAthletes] Error loading athletes:', error);
         Alert.alert('Feil', 'Kunne ikke laste utøvere');
         return;
+      }
+
+      console.log('[loadAthletes] Query returned', data?.length || 0, 'entries');
+
+      // Log field_results info
+      const entriesWithResults = (data || []).filter((e: any) => e.field_results?.length > 0);
+      console.log('[loadAthletes] Entries with field_results:', entriesWithResults.length);
+      if (entriesWithResults.length > 0) {
+        const sample = entriesWithResults[0];
+        console.log('[loadAthletes] Sample entry field_results:', JSON.stringify(sample.field_results));
       }
 
       // Transform the data including existing results
@@ -155,7 +195,8 @@ export default function RecordScreen() {
           .map((att: any) => ({
             id: att.id,
             attempt_number: att.attempt_number,
-            result: att.distance ? parseFloat(att.distance) : null,
+            // Convert centimeters (database) to meters (display)
+            result: att.distance ? parseFloat(att.distance) / 100 : null,
             is_foul: att.is_foul || false,
             is_pass: att.is_pass || false,
           }));
@@ -193,10 +234,20 @@ export default function RecordScreen() {
 
       setAthletes(transformedAthletes);
 
+      // Log transformed athletes summary
+      const athletesWithAttempts = transformedAthletes.filter(a => a.attempts.length > 0);
+      console.log('[loadAthletes] Transformed athletes:', transformedAthletes.length);
+      console.log('[loadAthletes] Athletes with attempts:', athletesWithAttempts.length);
+      if (athletesWithAttempts.length > 0) {
+        console.log('[loadAthletes] Sample athlete attempts:', athletesWithAttempts[0].first_name, athletesWithAttempts[0].attempts.length, 'attempts');
+      }
+
       // Determine current round based on max attempts
       const maxAttempts = Math.max(...transformedAthletes.map(a => a.attempts.length), 0);
+      console.log('[loadAthletes] Max attempts found:', maxAttempts);
       if (maxAttempts > 0) {
         setCurrentRound(Math.ceil(maxAttempts));
+        console.log('[loadAthletes] Setting currentRound to:', Math.ceil(maxAttempts));
       }
     } catch (error) {
       console.error('Error loading athletes:', error);
@@ -284,7 +335,24 @@ export default function RecordScreen() {
   const isRollCallComplete = athletes.some(a => a.rollCallStatus !== null);
 
   // Get only present/unchecked athletes for registration queue (exclude DNS)
-  const presentAthletes = athletes.filter(a => a.rollCallStatus !== 'absent');
+  // In finals mode, only include finalists in reverse order (8th best throws first)
+  const getRegistrationQueue = (): Athlete[] => {
+    const activeAthletes = athletes.filter(a => a.rollCallStatus !== 'absent');
+
+    if (!isFinalsMode) {
+      return activeAthletes;
+    }
+
+    // In finals mode: filter to finalists and sort by current standing (reversed)
+    // 8th best throws first, 1st best throws last
+    const finalists = activeAthletes
+      .filter(a => finalistIds.includes(a.id))
+      .sort((a, b) => (a.bestResult || 0) - (b.bestResult || 0)); // ascending = 8th first
+
+    return finalists;
+  };
+
+  const presentAthletes = getRegistrationQueue();
 
   // Registration functions - use presentAthletes for queue navigation
   const currentAthlete = presentAthletes[currentAthleteIndex];
@@ -306,13 +374,15 @@ export default function RecordScreen() {
       if (type === 'valid' && resultInput) {
         // Support both comma (Norwegian) and period as decimal separator
         const normalizedInput = resultInput.replace(',', '.');
-        distance = parseFloat(normalizedInput);
-        if (isNaN(distance)) {
+        const distanceInMeters = parseFloat(normalizedInput);
+        if (isNaN(distanceInMeters)) {
           Alert.alert('Ugyldig resultat', 'Skriv inn en gyldig avstand (f.eks. 5,45 eller 5.45)');
           setSaving(false);
           return;
         }
-        console.log(`Saving result for ${currentAthlete.first_name}: ${distance}m`);
+        // Convert meters to centimeters for database storage (web app convention)
+        distance = Math.round(distanceInMeters * 100);
+        console.log(`Saving result for ${currentAthlete.first_name}: ${distanceInMeters}m (${distance}cm)`);
       } else if (type === 'foul') {
         is_foul = true;
         console.log(`Recording foul for ${currentAthlete.first_name}`);
@@ -326,6 +396,16 @@ export default function RecordScreen() {
 
       const attemptNumber = currentAthlete.attempts.length + 1;
 
+      // Log the parameters being sent
+      console.log('Saving attempt with params:', {
+        session_id: session.id,
+        entry_id: currentAthlete.entry_id,
+        attempt_number: attemptNumber,
+        distance: distance,
+        is_foul: is_foul,
+        is_pass: is_pass,
+      });
+
       // Call the secure database function to save the attempt
       const { data: result, error: saveError } = await supabase.rpc('save_field_attempt', {
         p_session_id: session.id,
@@ -338,10 +418,12 @@ export default function RecordScreen() {
 
       if (saveError) {
         console.error('Error saving attempt:', saveError);
-        Alert.alert('Feil', 'Kunne ikke lagre forsøket');
+        Alert.alert('Feil', `Kunne ikke lagre forsøket: ${saveError.message || JSON.stringify(saveError)}`);
         setSaving(false);
         return;
       }
+
+      console.log('RPC result:', JSON.stringify(result));
 
       if (!result?.success) {
         console.error('Save attempt failed:', result?.error);
@@ -351,15 +433,17 @@ export default function RecordScreen() {
       }
 
       // Create new attempt object for local state
+      // Convert centimeters back to meters for display
       const newAttempt: AttemptResult = {
         id: result.attempt_id,
         attempt_number: attemptNumber,
-        result: distance,
+        result: distance !== null ? distance / 100 : null, // cm to meters
         is_foul,
         is_pass,
       };
 
-      const newBestMark = result.best_mark;
+      // best_mark from database is in cm, convert to meters
+      const newBestMark = result.best_mark !== null ? result.best_mark / 100 : null;
       const fieldResultId = result.field_result_id;
 
       // Update local state
@@ -383,20 +467,34 @@ export default function RecordScreen() {
       if (currentAthleteIndex < presentAthletes.length - 1) {
         setCurrentAthleteIndex(prev => prev + 1);
       } else {
-        Alert.alert(
-          'Runde fullført',
-          `Alle utøvere har hatt sitt forsøk i runde ${currentRound}.`,
-          [
-            {
-              text: 'Start ny runde',
-              onPress: () => {
-                setCurrentAthleteIndex(0);
-                setCurrentRound(prev => prev + 1);
-              }
-            },
-            { text: 'Tilbake', onPress: () => router.back() },
-          ]
-        );
+        // Round is complete
+        if (currentRound === 3 && !isFinalsMode) {
+          // After round 3, show finals prompt
+          setShowFinalsPrompt(true);
+        } else if (currentRound >= 6) {
+          // Competition complete
+          Alert.alert(
+            'Konkurranse fullført!',
+            'Alle 6 runder er gjennomført.',
+            [{ text: 'OK', onPress: () => router.back() }]
+          );
+        } else {
+          // Normal round complete
+          Alert.alert(
+            'Runde fullført',
+            `Alle utøvere har hatt sitt forsøk i runde ${currentRound}.`,
+            [
+              {
+                text: 'Start ny runde',
+                onPress: () => {
+                  setCurrentAthleteIndex(0);
+                  setCurrentRound(prev => prev + 1);
+                }
+              },
+              { text: 'Tilbake', onPress: () => router.back() },
+            ]
+          );
+        }
       }
     } catch (error) {
       console.error('Error saving result:', error);
@@ -417,6 +515,170 @@ export default function RecordScreen() {
     if (currentAthleteIndex < presentAthletes.length - 1) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setCurrentAthleteIndex(prev => prev + 1);
+    }
+  };
+
+  // Finals mode functions
+  const startFinalsMode = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+    // Get active athletes and sort by best result (descending)
+    const activeAthletes = athletes.filter(a => a.rollCallStatus !== 'absent');
+    const sortedByResult = [...activeAthletes].sort(
+      (a, b) => (b.bestResult || 0) - (a.bestResult || 0)
+    );
+
+    // Take top 8 (or all if less than 8)
+    const top8 = sortedByResult.slice(0, 8);
+    const top8Ids = top8.map(a => a.id);
+
+    setFinalistIds(top8Ids);
+    setIsFinalsMode(true);
+    setShowFinalsPrompt(false);
+    setCurrentAthleteIndex(0);
+    setCurrentRound(4); // Start round 4
+  };
+
+  const continueAllAthletes = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowFinalsPrompt(false);
+    setCurrentAthleteIndex(0);
+    setCurrentRound(4); // Start round 4 with all athletes
+  };
+
+  // Get non-finalist athletes (for display in results)
+  const getNonFinalists = (): Athlete[] => {
+    if (!isFinalsMode) return [];
+    return athletes
+      .filter(a => a.rollCallStatus !== 'absent' && !finalistIds.includes(a.id))
+      .sort((a, b) => (b.bestResult || 0) - (a.bestResult || 0));
+  };
+
+  // Add participant functions
+  const openAddParticipantModal = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Pre-fill gender from event if available (from first athlete)
+    const eventGender = athletes[0]?.gender as 'M' | 'W' | 'X' || 'M';
+    setNewParticipant({
+      firstName: '',
+      lastName: '',
+      dateOfBirth: '',
+      club: '',
+      gender: eventGender,
+    });
+    setShowAddParticipant(true);
+  };
+
+  const closeAddParticipantModal = () => {
+    setShowAddParticipant(false);
+    setNewParticipant({
+      firstName: '',
+      lastName: '',
+      dateOfBirth: '',
+      club: '',
+      gender: 'M',
+    });
+  };
+
+  const handleAddParticipant = async () => {
+    if (!session || eventIds.length === 0) return;
+
+    // Validate required fields
+    if (!newParticipant.firstName.trim() || !newParticipant.lastName.trim()) {
+      Alert.alert('Mangler informasjon', 'Fornavn og etternavn er påkrevd');
+      return;
+    }
+
+    if (!newParticipant.dateOfBirth.trim()) {
+      Alert.alert('Mangler informasjon', 'Fødselsdato er påkrevd');
+      return;
+    }
+
+    if (!newParticipant.club.trim()) {
+      Alert.alert('Mangler informasjon', 'Klubb er påkrevd');
+      return;
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setAddingParticipant(true);
+
+    try {
+      // Parse date of birth (format: DD.MM.YYYY or YYYY-MM-DD)
+      let dateOfBirth: string | null = null;
+      const dateStr = newParticipant.dateOfBirth.trim();
+      // Try DD.MM.YYYY format (Norwegian)
+      const norMatch = dateStr.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+      if (norMatch) {
+        dateOfBirth = `${norMatch[3]}-${norMatch[2].padStart(2, '0')}-${norMatch[1].padStart(2, '0')}`;
+      } else {
+        // Try YYYY-MM-DD format
+        const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (isoMatch) {
+          dateOfBirth = dateStr;
+        }
+      }
+
+      if (!dateOfBirth) {
+        Alert.alert('Ugyldig format', 'Fødselsdato må være på format DD.MM.ÅÅÅÅ');
+        setAddingParticipant(false);
+        return;
+      }
+
+      // Add to the first event (most common use case)
+      const eventId = eventIds[0];
+
+      const { data: result, error } = await supabase.rpc('add_participant_to_event', {
+        p_session_id: session.id,
+        p_event_id: eventId,
+        p_first_name: newParticipant.firstName.trim(),
+        p_last_name: newParticipant.lastName.trim(),
+        p_gender: newParticipant.gender,
+        p_date_of_birth: dateOfBirth,
+        p_club_name: newParticipant.club.trim() || null,
+      });
+
+      if (error) {
+        console.error('Error adding participant:', error);
+        Alert.alert('Feil', `Kunne ikke legge til deltager: ${error.message}`);
+        return;
+      }
+
+      if (!result?.success) {
+        console.error('Add participant failed:', result?.error);
+        Alert.alert('Feil', result?.error || 'Kunne ikke legge til deltager');
+        return;
+      }
+
+      // Add the new athlete to local state
+      const newAthlete: Athlete = {
+        id: result.athlete_id,
+        entry_id: result.entry_id,
+        bib_number: result.bib_number || '-',
+        first_name: result.first_name,
+        last_name: result.last_name,
+        club: newParticipant.club.trim() || undefined,
+        event_id: eventId,
+        gender: newParticipant.gender,
+        rollCallStatus: null,
+        attempts: [],
+      };
+
+      setAthletes(prev => [...prev, newAthlete]);
+
+      // Success feedback
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(
+        'Deltager lagt til',
+        `${result.first_name} ${result.last_name} er lagt til med startnummer ${result.bib_number}`,
+        [{ text: 'OK' }]
+      );
+
+      closeAddParticipantModal();
+    } catch (error) {
+      console.error('Error adding participant:', error);
+      Alert.alert('Feil', 'En feil oppstod ved tillegging av deltager');
+    } finally {
+      setAddingParticipant(false);
     }
   };
 
@@ -603,6 +865,238 @@ export default function RecordScreen() {
     );
   };
 
+  // Finals Prompt Modal Component
+  const renderFinalsPromptModal = () => {
+    // Get top 8 for display
+    const activeAthletes = athletes.filter(a => a.rollCallStatus !== 'absent');
+    const sortedByResult = [...activeAthletes].sort(
+      (a, b) => (b.bestResult || 0) - (a.bestResult || 0)
+    );
+    const top8Preview = sortedByResult.slice(0, 8);
+    const excluded = sortedByResult.slice(8);
+
+    return (
+      <Modal
+        visible={showFinalsPrompt}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFinalsPrompt(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.finalsModalContent}>
+            <View style={styles.finalsModalHeader}>
+              <FontAwesome name="trophy" size={32} color={colors.gold} />
+              <Text style={styles.finalsModalTitle}>Runde 3 fullført!</Text>
+              <Text style={styles.finalsModalSubtitle}>
+                Velg format for resterende forsøk
+              </Text>
+            </View>
+
+            {/* Option 1: Finals with Top 8 */}
+            <TouchableOpacity
+              style={styles.finalsOptionButton}
+              onPress={startFinalsMode}
+              activeOpacity={0.7}
+            >
+              <View style={styles.finalsOptionHeader}>
+                <FontAwesome name="star" size={24} color={colors.gold} />
+                <Text style={styles.finalsOptionTitle}>Finale (beste 8)</Text>
+              </View>
+              <Text style={styles.finalsOptionDescription}>
+                Kun de 8 beste fortsetter. Rekkefølge: 8-7-6-5-4-3-2-1
+              </Text>
+              <View style={styles.finalsPreviewContainer}>
+                <Text style={styles.finalsPreviewLabel}>Finalister:</Text>
+                <View style={styles.finalsPreviewList}>
+                  {top8Preview.map((athlete, idx) => (
+                    <View key={athlete.id} style={styles.finalsPreviewItem}>
+                      <Text style={styles.finalsPreviewRank}>{idx + 1}.</Text>
+                      <Text style={styles.finalsPreviewName} numberOfLines={1}>
+                        {athlete.first_name} {athlete.last_name}
+                      </Text>
+                      <Text style={styles.finalsPreviewResult}>
+                        {athlete.bestResult?.toFixed(2) || '-'} m
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                {excluded.length > 0 && (
+                  <Text style={styles.finalsExcludedText}>
+                    {excluded.length} utøver{excluded.length > 1 ? 'e' : ''} er ferdig etter 3 runder
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* Option 2: Continue with all */}
+            <TouchableOpacity
+              style={[styles.finalsOptionButton, styles.finalsOptionSecondary]}
+              onPress={continueAllAthletes}
+              activeOpacity={0.7}
+            >
+              <View style={styles.finalsOptionHeader}>
+                <FontAwesome name="users" size={24} color={colors.primary} />
+                <Text style={[styles.finalsOptionTitle, styles.finalsOptionTitleSecondary]}>
+                  Alle fortsetter
+                </Text>
+              </View>
+              <Text style={[styles.finalsOptionDescription, styles.finalsOptionDescSecondary]}>
+                Alle {activeAthletes.length} utøvere får 3 nye forsøk
+              </Text>
+            </TouchableOpacity>
+
+            {/* Cancel */}
+            <TouchableOpacity
+              style={styles.finalsCancelButton}
+              onPress={() => setShowFinalsPrompt(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.finalsCancelText}>Avbryt</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
+  // Add Participant Modal Component
+  const renderAddParticipantModal = () => {
+    return (
+      <Modal
+        visible={showAddParticipant}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeAddParticipantModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.addParticipantModalContent}>
+            <View style={styles.addParticipantHeader}>
+              <FontAwesome name="user-plus" size={28} color={colors.primary} />
+              <Text style={styles.addParticipantTitle}>Legg til deltager</Text>
+              <Text style={styles.addParticipantSubtitle}>
+                Legges kun til i denne øvelsen
+              </Text>
+            </View>
+
+            <ScrollView style={styles.addParticipantForm} showsVerticalScrollIndicator={false}>
+              {/* First Name */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Fornavn *</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Skriv fornavn"
+                  placeholderTextColor={colors.textMuted}
+                  value={newParticipant.firstName}
+                  onChangeText={(text) => setNewParticipant(prev => ({ ...prev, firstName: text }))}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+              </View>
+
+              {/* Last Name */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Etternavn *</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Skriv etternavn"
+                  placeholderTextColor={colors.textMuted}
+                  value={newParticipant.lastName}
+                  onChangeText={(text) => setNewParticipant(prev => ({ ...prev, lastName: text }))}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+              </View>
+
+              {/* Date of Birth */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Fødselsdato *</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="DD.MM.ÅÅÅÅ"
+                  placeholderTextColor={colors.textMuted}
+                  value={newParticipant.dateOfBirth}
+                  onChangeText={(text) => setNewParticipant(prev => ({ ...prev, dateOfBirth: text }))}
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+
+              {/* Club */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Klubb *</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Klubbnavn"
+                  placeholderTextColor={colors.textMuted}
+                  value={newParticipant.club}
+                  onChangeText={(text) => setNewParticipant(prev => ({ ...prev, club: text }))}
+                  autoCapitalize="words"
+                />
+              </View>
+
+              {/* Gender */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Kjønn *</Text>
+                <View style={styles.genderButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.genderButton,
+                      newParticipant.gender === 'M' && styles.genderButtonActive,
+                    ]}
+                    onPress={() => setNewParticipant(prev => ({ ...prev, gender: 'M' }))}
+                  >
+                    <Text style={[
+                      styles.genderButtonText,
+                      newParticipant.gender === 'M' && styles.genderButtonTextActive,
+                    ]}>Mann</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.genderButton,
+                      newParticipant.gender === 'W' && styles.genderButtonActive,
+                    ]}
+                    onPress={() => setNewParticipant(prev => ({ ...prev, gender: 'W' }))}
+                  >
+                    <Text style={[
+                      styles.genderButtonText,
+                      newParticipant.gender === 'W' && styles.genderButtonTextActive,
+                    ]}>Kvinne</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Action Buttons */}
+            <View style={styles.addParticipantActions}>
+              <TouchableOpacity
+                style={[styles.addParticipantButton, styles.addParticipantButtonPrimary, addingParticipant && styles.buttonDisabled]}
+                onPress={handleAddParticipant}
+                disabled={addingParticipant}
+                activeOpacity={0.7}
+              >
+                {addingParticipant ? (
+                  <ActivityIndicator color={colors.white} size="small" />
+                ) : (
+                  <>
+                    <FontAwesome name="plus" size={18} color={colors.white} />
+                    <Text style={styles.addParticipantButtonText}>Legg til</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.addParticipantCancelButton}
+                onPress={closeAddParticipantModal}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.addParticipantCancelText}>Avbryt</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   // ============================================================================
   // VIEW RENDERS
   // ============================================================================
@@ -650,17 +1144,27 @@ export default function RecordScreen() {
     return (
       <View style={styles.viewContainer}>
         <View style={styles.viewHeader}>
-          <Text style={styles.viewTitle}>Startliste / Opprop</Text>
-          <View style={styles.rollCallStats}>
-            <Text style={styles.viewSubtitle}>
-              {presentCount} tilstede
-            </Text>
-            {absentCount > 0 && (
-              <Text style={styles.dnsCount}>
-                {absentCount} DNS
+          <View style={styles.viewHeaderLeft}>
+            <Text style={styles.viewTitle}>Startliste / Opprop</Text>
+            <View style={styles.rollCallStats}>
+              <Text style={styles.viewSubtitle}>
+                {presentCount} tilstede
               </Text>
-            )}
+              {absentCount > 0 && (
+                <Text style={styles.dnsCount}>
+                  {absentCount} DNS
+                </Text>
+              )}
+            </View>
           </View>
+          {/* Add Participant Button */}
+          <TouchableOpacity
+            style={styles.addParticipantFab}
+            onPress={openAddParticipantModal}
+            activeOpacity={0.7}
+          >
+            <FontAwesome name="plus" size={18} color={colors.white} />
+          </TouchableOpacity>
         </View>
 
         {/* Mark all present button */}
@@ -716,12 +1220,24 @@ export default function RecordScreen() {
 
     return (
       <View style={styles.viewContainer}>
-        <View style={styles.roundIndicator}>
+        <View style={[styles.roundIndicator, isFinalsMode && styles.roundIndicatorFinals]}>
           <View style={styles.roundInfo}>
-            <Text style={styles.roundText}>Runde {currentRound}</Text>
-            <Text style={styles.queueCountText}>({presentAthletes.length} utøvere i køen)</Text>
+            <View style={styles.roundTextRow}>
+              <Text style={[styles.roundText, isFinalsMode && styles.roundTextFinals]}>
+                {isFinalsMode ? `Finale ${currentRound - 3}` : `Runde ${currentRound}`}
+              </Text>
+              {isFinalsMode && (
+                <View style={styles.finalsBadge}>
+                  <FontAwesome name="trophy" size={10} color={colors.white} />
+                  <Text style={styles.finalsBadgeText}>Top 8</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.queueCountText, isFinalsMode && styles.queueCountTextFinals]}>
+              ({presentAthletes.length} utøvere i køen)
+            </Text>
           </View>
-          <Text style={styles.progressText}>
+          <Text style={[styles.progressText, isFinalsMode && styles.progressTextFinals]}>
             {currentAthleteIndex + 1} / {presentAthletes.length}
           </Text>
         </View>
@@ -808,14 +1324,32 @@ export default function RecordScreen() {
     const dnsAthletes = athletes.filter(a => a.rollCallStatus === 'absent');
     const activeAthletes = athletes.filter(a => a.rollCallStatus !== 'absent');
 
-    // Sort active athletes by best result (descending)
-    const sortedAthletes = [...activeAthletes]
-      .filter(a => a.bestResult !== undefined || a.attempts.length > 0)
-      .sort((a, b) => (b.bestResult || 0) - (a.bestResult || 0));
+    // In finals mode, separate finalists from non-finalists
+    let sortedAthletes: Athlete[];
+    let nonFinalistAthletes: Athlete[] = [];
 
-    // Athletes waiting for results (exclude DNS)
+    if (isFinalsMode) {
+      // Finalists: athletes in finalistIds, sorted by best result
+      const finalists = activeAthletes
+        .filter(a => finalistIds.includes(a.id) && (a.bestResult !== undefined || a.attempts.length > 0))
+        .sort((a, b) => (b.bestResult || 0) - (a.bestResult || 0));
+
+      // Non-finalists: athletes NOT in finalistIds, with results from first 3 rounds
+      nonFinalistAthletes = activeAthletes
+        .filter(a => !finalistIds.includes(a.id) && (a.bestResult !== undefined || a.attempts.length > 0))
+        .sort((a, b) => (b.bestResult || 0) - (a.bestResult || 0));
+
+      sortedAthletes = finalists;
+    } else {
+      // Normal mode: all athletes with results, sorted by best
+      sortedAthletes = [...activeAthletes]
+        .filter(a => a.bestResult !== undefined || a.attempts.length > 0)
+        .sort((a, b) => (b.bestResult || 0) - (a.bestResult || 0));
+    }
+
+    // Athletes waiting for results (exclude DNS and non-finalists in finals mode)
     const athletesWithoutResults = activeAthletes.filter(
-      a => a.bestResult === undefined && a.attempts.length === 0
+      a => a.bestResult === undefined && a.attempts.length === 0 && (!isFinalsMode || finalistIds.includes(a.id))
     );
 
     return (
@@ -854,6 +1388,39 @@ export default function RecordScreen() {
             nestedScrollEnabled={true}
             ListFooterComponent={
               <>
+                {/* Non-finalists section (only in finals mode) */}
+                {isFinalsMode && nonFinalistAthletes.length > 0 && (
+                  <View style={styles.nonFinalistsSection}>
+                    <Text style={styles.nonFinalistsSectionTitle}>
+                      Utenfor finale ({nonFinalistAthletes.length})
+                    </Text>
+                    <Text style={styles.nonFinalistsSectionSubtitle}>
+                      Resultat etter 3 omganger
+                    </Text>
+                    {nonFinalistAthletes.map((athlete, index) => (
+                      <View key={athlete.id} style={styles.nonFinalistRow}>
+                        <View style={styles.nonFinalistRankContainer}>
+                          <Text style={styles.nonFinalistRank}>{sortedAthletes.length + index + 1}.</Text>
+                        </View>
+                        <View style={styles.resultNameContainer}>
+                          <Text style={styles.nonFinalistName}>
+                            {athlete.first_name} {athlete.last_name}
+                          </Text>
+                          <Text style={styles.nonFinalistClub}>
+                            {athlete.club || 'Ingen klubb'}
+                            {isMerged && athlete.age_group && ` • ${athlete.age_group}`}
+                          </Text>
+                        </View>
+                        <View style={styles.resultValueContainer}>
+                          <Text style={styles.nonFinalistResult}>
+                            {athlete.bestResult?.toFixed(2) || '-'} m
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
                 {/* Athletes waiting for results */}
                 {athletesWithoutResults.length > 0 && (
                   <View style={styles.pendingSection}>
@@ -995,6 +1562,12 @@ export default function RecordScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Finals Prompt Modal */}
+        {renderFinalsPromptModal()}
+
+        {/* Add Participant Modal */}
+        {renderAddParticipantModal()}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1304,6 +1877,42 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
     color: colors.textSecondary,
+  },
+  roundTextRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  roundIndicatorFinals: {
+    backgroundColor: colors.gold,
+    marginHorizontal: -spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    marginBottom: spacing[2],
+    borderRadius: borderRadius.lg,
+  },
+  roundTextFinals: {
+    color: colors.textPrimary,
+  },
+  queueCountTextFinals: {
+    color: 'rgba(0, 0, 0, 0.6)',
+  },
+  progressTextFinals: {
+    color: colors.textPrimary,
+  },
+  finalsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing[2],
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  finalsBadgeText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.white,
   },
   queueContainer: {
     flex: 1,
@@ -1678,5 +2287,290 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.bold,
     color: colors.white,
+  },
+
+  // Finals Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  finalsModalContent: {
+    backgroundColor: colors.backgroundCard,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    padding: spacing[5],
+    maxHeight: '90%',
+  },
+  finalsModalHeader: {
+    alignItems: 'center',
+    marginBottom: spacing[5],
+  },
+  finalsModalTitle: {
+    fontSize: typography.fontSize['2xl'],
+    fontWeight: typography.fontWeight.bold,
+    color: colors.textPrimary,
+    marginTop: spacing[3],
+  },
+  finalsModalSubtitle: {
+    fontSize: typography.fontSize.base,
+    color: colors.textSecondary,
+    marginTop: spacing[1],
+  },
+  finalsOptionButton: {
+    backgroundColor: colors.gold,
+    borderRadius: borderRadius.lg,
+    padding: spacing[4],
+    marginBottom: spacing[3],
+  },
+  finalsOptionSecondary: {
+    backgroundColor: colors.backgroundInput,
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  finalsOptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    marginBottom: spacing[2],
+  },
+  finalsOptionTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.textPrimary,
+  },
+  finalsOptionTitleSecondary: {
+    color: colors.textPrimary,
+  },
+  finalsOptionDescription: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
+  finalsOptionDescSecondary: {
+    color: colors.textSecondary,
+  },
+  finalsPreviewContainer: {
+    marginTop: spacing[3],
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: borderRadius.md,
+    padding: spacing[3],
+  },
+  finalsPreviewLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textPrimary,
+    marginBottom: spacing[2],
+  },
+  finalsPreviewList: {
+    gap: spacing[1],
+  },
+  finalsPreviewItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing[1],
+  },
+  finalsPreviewRank: {
+    width: 24,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.textPrimary,
+  },
+  finalsPreviewName: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    color: colors.textPrimary,
+  },
+  finalsPreviewResult: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textPrimary,
+  },
+  finalsExcludedText: {
+    marginTop: spacing[3],
+    fontSize: typography.fontSize.sm,
+    fontStyle: 'italic',
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  finalsCancelButton: {
+    alignItems: 'center',
+    paddingVertical: spacing[4],
+    marginTop: spacing[2],
+  },
+  finalsCancelText: {
+    fontSize: typography.fontSize.base,
+    color: colors.textMuted,
+    fontWeight: typography.fontWeight.medium,
+  },
+
+  // Non-finalists section (athletes outside top 8)
+  nonFinalistsSection: {
+    marginTop: spacing[6],
+    padding: spacing[4],
+    backgroundColor: colors.backgroundInput,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  nonFinalistsSectionTitle: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textSecondary,
+    marginBottom: spacing[1],
+  },
+  nonFinalistsSectionSubtitle: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textMuted,
+    marginBottom: spacing[3],
+    fontStyle: 'italic',
+  },
+  nonFinalistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing[2],
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  nonFinalistRankContainer: {
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing[2],
+  },
+  nonFinalistRank: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.textMuted,
+  },
+  nonFinalistName: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.textSecondary,
+  },
+  nonFinalistClub: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textMuted,
+  },
+  nonFinalistResult: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textSecondary,
+  },
+
+  // View Header Left (for add participant button)
+  viewHeaderLeft: {
+    flex: 1,
+  },
+
+  // Add Participant FAB Button
+  addParticipantFab: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.md,
+  },
+
+  // Add Participant Modal Styles
+  addParticipantModalContent: {
+    backgroundColor: colors.backgroundCard,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    padding: spacing[5],
+    maxHeight: '85%',
+  },
+  addParticipantHeader: {
+    alignItems: 'center',
+    marginBottom: spacing[4],
+  },
+  addParticipantTitle: {
+    fontSize: typography.fontSize['2xl'],
+    fontWeight: typography.fontWeight.bold,
+    color: colors.textPrimary,
+    marginTop: spacing[2],
+  },
+  addParticipantSubtitle: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: spacing[1],
+  },
+  addParticipantForm: {
+    maxHeight: 400,
+  },
+  formGroup: {
+    marginBottom: spacing[4],
+  },
+  formLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.textSecondary,
+    marginBottom: spacing[2],
+  },
+  formInput: {
+    backgroundColor: colors.backgroundInput,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    fontSize: typography.fontSize.base,
+    color: colors.textPrimary,
+  },
+  genderButtons: {
+    flexDirection: 'row',
+    gap: spacing[2],
+  },
+  genderButton: {
+    flex: 1,
+    paddingVertical: spacing[3],
+    backgroundColor: colors.backgroundInput,
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  genderButtonActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+  },
+  genderButtonText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.textSecondary,
+  },
+  genderButtonTextActive: {
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  addParticipantActions: {
+    marginTop: spacing[4],
+    gap: spacing[3],
+  },
+  addParticipantButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[2],
+    paddingVertical: spacing[4],
+    borderRadius: borderRadius.lg,
+  },
+  addParticipantButtonPrimary: {
+    backgroundColor: colors.primary,
+  },
+  addParticipantButtonText: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.white,
+  },
+  addParticipantCancelButton: {
+    alignItems: 'center',
+    paddingVertical: spacing[3],
+  },
+  addParticipantCancelText: {
+    fontSize: typography.fontSize.base,
+    color: colors.textMuted,
+    fontWeight: typography.fontWeight.medium,
   },
 });
