@@ -232,7 +232,7 @@ export default function RecordScreen() {
 
     // Find the athlete to get their entry_id
     const athlete = athletes.find(a => a.id === athleteId);
-    if (!athlete) return;
+    if (!athlete || !session) return;
 
     // Update local state immediately for responsiveness
     setAthletes(prev =>
@@ -241,25 +241,33 @@ export default function RecordScreen() {
       )
     );
 
-    // Save to database
+    // Save to database using secure function
     try {
       // Map roll call status to entry status
-      let entryStatus: string | null = null;
+      let entryStatus: string = 'registered';
       if (status === 'present') {
         entryStatus = 'checked_in';
       } else if (status === 'absent') {
         entryStatus = 'DNS';
-      } else {
-        entryStatus = 'registered'; // Reset to registered if null
       }
 
-      const { error } = await supabase
-        .from('entries')
-        .update({ status: entryStatus })
-        .eq('id', athlete.entry_id);
+      // Use the secure RPC function to update roll call status
+      const { data: result, error } = await supabase.rpc('update_roll_call_status', {
+        p_session_id: session.id,
+        p_entry_id: athlete.entry_id,
+        p_status: entryStatus,
+      });
 
       if (error) {
         console.error('Error updating roll call status:', error);
+        // Revert local state on error
+        setAthletes(prev =>
+          prev.map(a =>
+            a.id === athleteId ? { ...a, rollCallStatus: athlete.rollCallStatus } : a
+          )
+        );
+      } else if (result && !result.success) {
+        console.error('Roll call update failed:', result.error);
         // Revert local state on error
         setAthletes(prev =>
           prev.map(a =>
